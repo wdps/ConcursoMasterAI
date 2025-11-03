@@ -1,0 +1,1002 @@
+﻿// CONCURSOIA - Sistema Inteligente de Estudos
+let simuladoAtual = null;
+let questaoAtual = null;
+
+// Sistema de Cache Local
+const SessionManager = {
+    set: function(key, value) {
+        try {
+            sessionStorage.setItem("concursoia_" + key, JSON.stringify(value));
+        } catch (e) {
+            console.warn("Erro ao salvar sessão:", e);
+        }
+    },
+
+    get: function(key) {
+        try {
+            const stored = sessionStorage.getItem("concursoia_" + key);
+            return stored ? JSON.parse(stored) : null;
+        } catch (e) {
+            console.warn("Erro ao recuperar sessão:", e);
+            return null;
+        }
+    },
+
+    remove: function(key) {
+        try {
+            sessionStorage.removeItem("concursoia_" + key);
+        } catch (e) {
+            console.warn("Erro ao remover sessão:", e);
+        }
+    }
+};
+
+// Funções de Carregamento
+function carregarConteudoInicial() {
+    carregarAreas();
+    carregarBancas();
+    carregarTemasRedacao();
+}
+
+function carregarBancas() {
+    fetch("/api/bancas")
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            exibirBancas(data.bancas);
+        }
+    })
+    .catch(error => {
+        console.error("Erro ao carregar bancas:", error);
+    });
+}
+
+function carregarAreas() {
+    const cachedAreas = SessionManager.get("areas_cache");
+    if (cachedAreas) {
+        exibirAreas(cachedAreas);
+        return;
+    }
+
+    fetch("/api/areas")
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            SessionManager.set("areas_cache", data.areas);
+            exibirAreas(data.areas);
+        }
+    })
+    .catch(error => {
+        console.error("Erro ao carregar áreas:", error);
+    });
+}
+
+function carregarTemasRedacao() {
+    fetch("/api/redacao/temas")
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            const select = document.getElementById("temas-redacao");
+            if (!select) return;
+
+            select.innerHTML = '<option value="">Selecione um tema</option>';
+
+            data.temas.forEach(tema => {
+                const option = document.createElement("option");
+                option.value = tema.titulo;
+                option.textContent = tema.titulo;
+                select.appendChild(option);
+            });
+        }
+    })
+    .catch(error => {
+        console.error("Erro na API de Redação:", error);
+    });
+}
+
+// Navegação
+function navegarPara(tela) {
+    document.querySelectorAll(".tela").forEach(t => {
+        t.classList.add("hidden");
+    });
+
+    const telaElement = document.getElementById(tela);
+    if (telaElement) {
+        telaElement.classList.remove("hidden");
+    }
+
+    document.querySelectorAll(".nav-tab").forEach(tab => {
+        tab.classList.remove("active");
+    });
+    
+    const navTab = document.querySelector('.nav-tab[onclick*="' + tela + '"]');
+    if (navTab) {
+        navTab.classList.add("active");
+    }
+
+    if (tela === "tela-simulado") {
+        const selecaoContainer = document.getElementById("selecao-simulado");
+        const simuladoAtivoContainer = document.getElementById("simulado-ativo");
+        const resultado = document.getElementById("tela-resultado");
+
+        if (selecaoContainer) selecaoContainer.classList.remove("hidden");
+        if (simuladoAtivoContainer) simuladoAtivoContainer.classList.add("hidden");
+        if (resultado) resultado.classList.add("hidden");
+
+        carregarAreas();
+        carregarBancas();
+    } else if (tela === "tela-redacao") {
+        carregarTemasRedacao();
+        setTimeout(exibirDicasRedacao, 100);
+    } else if (tela === "tela-dashboard") {
+        carregarDashboard();
+    }
+}
+
+// SIMULADO - FUNÇÕES CORRIGIDAS
+function iniciarSimulado() {
+    const areasSelecionadas = Array.from(
+        document.querySelectorAll("#materias-container .check-area:checked")
+    ).map(cb => cb.value);
+    
+    const bancaSelecionada = document.getElementById("select-banca").value;
+    const quantidade = document.getElementById("quantidade-questoes").value;
+
+    if (areasSelecionadas.length === 0) {
+        alert("Selecione pelo menos uma Área de Estudo!");
+        return;
+    }
+
+    const selecaoContainer = document.getElementById("selecao-simulado");
+    const simuladoAtivoContainer = document.getElementById("simulado-ativo");
+
+    if (selecaoContainer) selecaoContainer.classList.add("hidden");
+    if (simuladoAtivoContainer) {
+         simuladoAtivoContainer.classList.remove("hidden");
+         simuladoAtivoContainer.innerHTML = '<div class="card"><div class="text-center"><div class="loading"></div><p>Preparando seu simulado...</p></div></div>';
+    }
+
+    fetch("/api/simulado/iniciar", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+            areas: areasSelecionadas, 
+            banca: bancaSelecionada,
+            quantidade: quantidade 
+        })
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error("Erro na resposta do servidor: " + response.status);
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data.success && data.questao) {
+            simuladoAtual = {
+                indice_atual: data.indice_atual,
+                total_questoes: data.total_questoes
+            };
+            
+            mostrarTelaSimuladoAtivo(data.total_questoes);
+            exibirQuestao(data.questao, data.indice_atual, data.total_questoes, data.resposta_anterior);
+        } else {
+            alert("Erro ao iniciar simulado: " + (data.error || "Nenhuma questão encontrada para os filtros selecionados."));
+            if (selecaoContainer) selecaoContainer.classList.remove("hidden");
+            if (simuladoAtivoContainer) simuladoAtivoContainer.classList.add("hidden");
+        }
+    })
+    .catch(error => {
+        console.error("Erro:", error);
+        alert("Erro ao iniciar simulado: " + error.message);
+        if (selecaoContainer) selecaoContainer.classList.remove("hidden");
+        if (simuladoAtivoContainer) simuladoAtivoContainer.classList.add("hidden");
+    });
+}
+
+// BOTÕES DO SIMULADO - CORRIGIDOS E PROFISSIONAIS
+function mostrarTelaSimuladoAtivo(totalQuestoes) {
+    const selecaoContainer = document.getElementById("selecao-simulado");
+    const simuladoAtivoContainer = document.getElementById("simulado-ativo");
+    
+    if (selecaoContainer) selecaoContainer.classList.add("hidden");
+    if (simuladoAtivoContainer) {
+        simuladoAtivoContainer.classList.remove("hidden");
+        simuladoAtivoContainer.innerHTML = 
+        `<div class="card questao-container">
+            <div class="questao-header">
+                <div>
+                    <h3 id="questao-numero">Questão 1 de ${totalQuestoes}</h3>
+                    <div class="questao-info">
+                        <span class="questao-tag" id="questao-disciplina">-</span>
+                        <span class="questao-tag" id="questao-materia">-</span>
+                        <span class="questao-tag" id="questao-dificuldade">-</span>
+                    </div>
+                </div>
+            </div>
+            <div class="progresso-container">
+                <div id="progresso-simulado" class="progresso-bar"></div>
+            </div>
+            <div class="questao-content-wrapper">
+                <div class="questao-enunciado-container">
+                    <div class="questao-enunciado" id="questao-enunciado">Carregando questão...</div>
+                </div>
+                <div class="questao-auxiliar" id="questao-auxiliar">
+                    <div class="auxiliar-vazio">Nenhuma informação auxiliar para esta questão.</div>
+                </div>
+            </div>
+            <div class="alternativas-container" id="questao-alternativas"></div>
+            <div id="feedback-questao" style="display: none;"></div>
+            <div class="simulado-navigation-profissional">
+                <div class="nav-group-left">
+                    <button id="btn-anterior" class="btn btn-anterior" onclick="mudarQuestao(-1)" disabled>
+                        <span class="btn-icon">←</span> Anterior
+                    </button>
+                </div>
+                
+                <div class="nav-group-center">
+                    <button class="btn btn-responder-profissional" onclick="responderQuestao()">
+                        <span class="btn-icon">✓</span> Responder Questão
+                    </button>
+                </div>
+                
+                <div class="nav-group-right">
+                    <button id="btn-proximo" class="btn btn-proximo" onclick="mudarQuestao(1)">
+                        Próxima <span class="btn-icon">→</span>
+                    </button>
+                    <button id="btn-finalizar-geral" class="btn btn-finalizar" onclick="finalizarSimulado()">
+                        <span class="btn-icon">⏹</span> Finalizar Simulado
+                    </button>
+                </div>
+            </div>
+        </div>`;
+    }
+}
+
+function exibirQuestao(questao, indice, total, respostaAnterior) {
+    questaoAtual = questao;
+
+    document.getElementById("questao-numero").textContent = "Questão " + (indice + 1) + " de " + total;
+    document.getElementById("questao-disciplina").textContent = questao.disciplina;
+    document.getElementById("questao-materia").textContent = questao.materia;
+    document.getElementById("questao-dificuldade").textContent = questao.dificuldade || "Média";
+    document.getElementById("questao-enunciado").innerHTML = questao.enunciado;
+
+    atualizarProgresso(indice, total);
+
+    // Área auxiliar com cards
+    const auxiliarElement = document.getElementById("questao-auxiliar");
+    if (auxiliarElement) {
+        let auxiliarHTML = '';
+
+        if (questao.dica && questao.dica !== "N/A" && questao.dica !== "") {
+            auxiliarHTML += 
+            `<div class="auxiliar-card dica-card">
+                <div class="auxiliar-header">
+                    <span class="auxiliar-icon">💡</span>
+                    <h4>Dica</h4>
+                </div>
+                <div class="auxiliar-content">
+                    ${questao.dica}
+                </div>
+            </div>`;
+        }
+
+        if (questao.formula && questao.formula !== "N/A" && questao.formula !== "") {
+            auxiliarHTML += 
+            `<div class="auxiliar-card formula-card">
+                <div class="auxiliar-header">
+                    <span class="auxiliar-icon">📐</span>
+                    <h4>Fórmula</h4>
+                </div>
+                <div class="auxiliar-content">
+                    ${questao.formula}
+                </div>
+            </div>`;
+        }
+
+        if (auxiliarHTML === '') {
+            auxiliarHTML = '<div class="auxiliar-vazio">Nenhuma informação auxiliar para esta questão.</div>';
+        }
+
+        auxiliarElement.innerHTML = auxiliarHTML;
+    }
+
+    // Alternativas
+    const alternativasContainer = document.getElementById("questao-alternativas");
+    if (alternativasContainer) {
+        alternativasContainer.innerHTML = '';
+
+        Object.entries(questao.alternativas).forEach(([letra, texto]) => {
+            if (letra === "e" && (texto === null || texto === "")) {
+                return;
+            }
+
+            const alternativaDiv = document.createElement("div");
+            alternativaDiv.className = "alternativa";
+
+            const isSelected = respostaAnterior && (respostaAnterior.alternativa_escolhida === letra);
+            const disabledAttr = respostaAnterior ? "disabled" : "";
+
+            alternativaDiv.innerHTML = 
+            `<input type="radio" name="alternativa" id="alt-${letra}" value="${letra}" ${disabledAttr}>
+            <label for="alt-${letra}">
+                <span class="letra-alternativa">${letra.toUpperCase()})</span>
+                ${texto}
+            </label>`;
+
+            alternativaDiv.onclick = function() {
+                if (respostaAnterior) return;
+                this.querySelector("input[type='radio']").checked = true;
+                alternativasContainer.querySelectorAll(".alternativa").forEach(alt => {
+                    alt.classList.remove("selected");
+                });
+                this.classList.add("selected");
+            };
+
+            if (isSelected) {
+                alternativaDiv.classList.add("selected");
+            }
+
+            alternativasContainer.appendChild(alternativaDiv);
+        });
+    }
+
+    // Feedback da questão anterior
+    if (respostaAnterior) {
+        const feedbackData = {
+             acertou: respostaAnterior.acertou,
+             resposta_correta: questao.resposta_correta.toUpperCase(),
+             justificativa: questao.justificativa
+        };
+        mostrarFeedbackQuestao(feedbackData);
+        desabilitarInteracaoQuestao();
+    } else {
+        const feedbackQuestao = document.getElementById("feedback-questao");
+        if(feedbackQuestao) feedbackQuestao.style.display = "none";
+        habilitarInteracaoQuestao();
+    }
+
+    // Controles de navegação
+    const btnAnterior = document.getElementById("btn-anterior");
+    if (btnAnterior) {
+        btnAnterior.disabled = indice === 0;
+    }
+
+    const btnProximo = document.getElementById("btn-proximo");
+    if (btnProximo) {
+        btnProximo.style.display = indice < total - 1 ? "inline-block" : "none";
+    }
+}
+
+function atualizarProgresso(indice, total) {
+    const progresso = ((indice + 1) / total) * 100;
+    const progressBar = document.getElementById("progresso-simulado");
+    if (progressBar) {
+        progressBar.style.width = progresso + "%";
+    }
+}
+
+function mudarQuestao(direcao) {
+    if (!simuladoAtual) {
+        alert("Nenhum simulado ativo!");
+        return;
+    }
+
+    const indiceAtual = simuladoAtual.indice_atual || 0;
+    const novoIndice = indiceAtual + direcao;
+
+    if (novoIndice < 0 || novoIndice >= simuladoAtual.total_questoes) {
+        return;
+    }
+
+    fetch("/api/simulado/questao/" + novoIndice)
+    .then(response => {
+        if (!response.ok) {
+            throw new Error("Erro ao buscar questão: " + response.status);
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data.success) {
+            simuladoAtual.indice_atual = novoIndice;
+            exibirQuestao(data.questao, novoIndice, data.total_questoes, data.resposta_anterior);
+        } else {
+            alert("Erro: " + data.error);
+        }
+    })
+    .catch(error => {
+        console.error("Erro:", error);
+        alert("Erro ao navegar entre questões: " + error.message);
+    });
+}
+
+function responderQuestao() {
+    if (!questaoAtual) {
+        alert("Nenhuma questão carregada!");
+        return;
+    }
+
+    const alternativaSelecionada = document.querySelector('input[name="alternativa"]:checked');
+
+    if (!alternativaSelecionada) {
+        alert("Selecione uma alternativa!");
+        return;
+    }
+
+    fetch("/api/simulado/responder", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+            questao_id: questaoAtual.id,
+            alternativa: alternativaSelecionada.value
+        })
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error("Erro na resposta: " + response.status);
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data.success) {
+            mostrarFeedbackQuestao(data);
+            desabilitarInteracaoQuestao();
+        } else {
+            alert("Erro: " + data.error);
+        }
+    })
+    .catch(error => {
+        console.error("Erro ao responder:", error);
+        alert("Erro ao responder questão: " + error.message);
+    });
+}
+
+function mostrarFeedbackQuestao(data) {
+    const feedback = document.getElementById("feedback-questao");
+    if (feedback) {
+        let feedbackHTML = '<div class="feedback ' + (data.acertou ? "acerto" : "erro") + '">';
+        feedbackHTML += '<h4>' + (data.acertou ? "✅ Acertou!" : "❌ Errou!") + "</h4>";
+        feedbackHTML += '<p><strong>Resposta correta:</strong> ' + data.resposta_correta + "</p>";
+
+        if (!data.acertou && data.justificativa) {
+             feedbackHTML += '<p><strong>Explicação:</strong> ' + data.justificativa + "</p>";
+        }
+
+        feedbackHTML += "</div>";
+        feedback.innerHTML = feedbackHTML;
+        feedback.style.display = "block";
+    }
+}
+
+function desabilitarInteracaoQuestao() {
+    document.querySelectorAll(".alternativas-container input[type='radio']").forEach(input => {
+        input.disabled = true;
+    });
+    const btnResponder = document.querySelector(".btn-responder-profissional");
+    if (btnResponder) {
+        btnResponder.disabled = true;
+    }
+}
+
+function habilitarInteracaoQuestao() {
+    document.querySelectorAll(".alternativas-container input[type='radio']").forEach(input => {
+        input.disabled = false;
+    });
+    const btnResponder = document.querySelector(".btn-responder-profissional");
+    if (btnResponder) {
+        btnResponder.disabled = false;
+    }
+}
+
+function finalizarSimulado() {
+    if (!simuladoAtual) {
+        alert("Nenhum simulado ativo para finalizar!");
+        return;
+    }
+
+    if (!confirm("Tem certeza que deseja finalizar o simulado agora?")) {
+        return;
+    }
+
+    const simuladoContainer = document.getElementById("simulado-ativo");
+    if (simuladoContainer) {
+        simuladoContainer.innerHTML = '<div class="text-center"><div class="loading"></div><p>Finalizando simulado e gerando resultados...</p></div>';
+    }
+
+    fetch("/api/simulado/finalizar", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        }
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error("Erro na resposta: " + response.status);
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data.success) {
+            exibirResultado(data.relatorio);
+        } else {
+            alert("Erro: " + data.error);
+        }
+    })
+    .catch(error => {
+        console.error("Erro na finalização:", error);
+        alert("Erro ao finalizar simulado: " + error.message);
+    });
+}
+
+function exibirResultado(relatorio) {
+    document.getElementById("resultado-acertos").textContent = relatorio.total_acertos + "/" + relatorio.total_questoes;
+    document.getElementById("resultado-percentual").textContent = relatorio.percentual_acerto + "%";
+    document.getElementById("resultado-nota").textContent = relatorio.nota_final + "%";
+
+    const simuladoAtivo = document.getElementById("simulado-ativo");
+    const resultado = document.getElementById("tela-resultado");
+    if (simuladoAtivo) simuladoAtivo.classList.add("hidden");
+    if (resultado) resultado.classList.remove("hidden");
+}
+
+// REDAÇÃO - COM DICAS NO LADO DIREITO
+function corrigirRedacao() {
+    const temaSelect = document.getElementById("temas-redacao");
+    const textoRedacao = document.getElementById("texto-redacao").value;
+
+    if (!temaSelect.value) {
+        alert("Selecione um tema!");
+        return;
+    }
+
+    if (textoRedacao.trim().length < 100) {
+        alert("Digite uma redação com pelo menos 100 caracteres para uma análise justa.");
+        return;
+    }
+
+    const btnCorrigir = document.getElementById("btn-corrigir");
+    const textoOriginal = btnCorrigir ? btnCorrigir.innerHTML : "🔍 Corrigir Redação";
+    if(btnCorrigir) {
+        btnCorrigir.innerHTML = '<span class="loading small"></span> Corrigindo...';
+        btnCorrigir.disabled = true;
+    }
+
+    fetch("/api/redacao/corrigir-gemini", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+            tema: temaSelect.value,
+            texto: textoRedacao
+        })
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error("Erro na API de correção: " + response.status);
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data.success) {
+            exibirCorrecaoRedacao(data.correcao);
+        } else {
+            alert("Erro ao corrigir: " + data.error);
+        }
+    })
+    .catch(error => {
+        console.error("Erro:", error);
+        alert("Erro ao corrigir redação: " + error.message);
+    })
+    .finally(() => {
+        if(btnCorrigir) {
+            btnCorrigir.innerHTML = textoOriginal;
+            btnCorrigir.disabled = false;
+        }
+    });
+}
+
+function exibirCorrecaoRedacao(correcao) {
+    const resultadoDiv = document.getElementById("resultado-correcao");
+
+    let html = '<div class="card resultado-header">' +
+        '<div class="nota-container">' +
+            '<h3>📊 Resultado da Correção</h3>' +
+            '<div class="nota-final">' + (correcao.nota_final || 0) + "/100</div>" +
+            '<div class="nota-descricao">' +
+                ((correcao.nota_final || 0) >= 80 ? "🎉 Excelente! Nível competitivo para concursos!" :
+                 (correcao.nota_final || 0) >= 60 ? "👍 Bom desempenho, mas pode melhorar!" :
+                 "📚 Precisa de mais prática. Continue estudando!") +
+            "</div>" +
+        "</div>" +
+    "</div>" +
+    '<div class="card">' +
+        '<h4>📈 Análise por Competências:</h4>';
+
+    if (correcao.analise_competencias && Array.isArray(correcao.analise_competencias)) {
+        correcao.analise_competencias.forEach(comp => {
+            const nota = comp.nota || 0;
+            const percentual = (nota / 20) * 100;
+            html += '<div class="competencia-item">' +
+                '<div class="competencia-header">' +
+                    '<h5>' + (comp.competencia || "Competência Indefinida") + "</h5>" +
+                    '<span class="nota-competencia">' + nota + "/20</span>" +
+                "</div>" +
+                '<div class="progress-bar-competencia">' +
+                    '<div class="progress-fill" style="width: ' + percentual + '%"></div>' +
+                "</div>" +
+                '<p class="comentario-competencia">' + (comp.comentario || "Sem comentário.") + "</p>" +
+            "</div>";
+        });
+    }
+
+    html += "</div>";
+
+    html += '<div class="analise-grid">' +
+        '<div class="card">' +
+            '<h4>✅ Pontos Fortes:</h4>' +
+            '<ul class="lista-pontos">' +
+                ((correcao.pontos_fortes && Array.isArray(correcao.pontos_fortes) && correcao.pontos_fortes.length > 0) ?
+                    correcao.pontos_fortes.map(ponto => '<li>' + ponto + '</li>').join('') :
+                    '<li>Nenhum ponto forte específico identificado.</li>') +
+            "</ul>" +
+        "</div>" +
+        '<div class="card">' +
+            '<h4>📝 Pontos a Melhorar:</h4>' +
+            '<ul class="lista-pontos">' +
+                 ((correcao.pontos_fracos && Array.isArray(correcao.pontos_fracos) && correcao.pontos_fracos.length > 0) ?
+                    correcao.pontos_fracos.map(ponto => '<li>' + ponto + '</li>').join('') :
+                    '<li>Nenhum ponto fraco específico identificado.</li>') +
+            "</ul>" +
+        "</div>" +
+    "</div>" +
+    '<div class="card">' +
+        '<h4>💡 Sugestões de Melhoria:</h4>' +
+        '<ul class="lista-pontos">' +
+            ((correcao.sugestoes_melhoria && Array.isArray(correcao.sugestoes_melhoria) && correcao.sugestoes_melhoria.length > 0) ?
+                correcao.sugestoes_melhoria.map(sugestao => '<li>' + sugestao + '</li>').join('') :
+                '<li>Continue praticando e revisando a gramática.</li>') +
+        "</ul>" +
+    "</div>" +
+    '<div class="card dicas-redacao">' +
+        '<h4>🎯 Dicas Específicas para Concursos:</h4>' +
+        '<ul class="lista-pontos">' +
+            ((correcao.dicas_concursos && Array.isArray(correcao.dicas_concursos) && correcao.dicas_concursos.length > 0) ?
+                correcao.dicas_concursos.map(dica => '<li>' + dica + '</li>').join('') : 
+                '<li>Mantenha a estrutura dissertativa clara.</li><li>Use argumentos sólidos e fundamentados.</li><li>Cuidado com a norma culta.</li>') +
+        "</ul>" +
+    "</div>";
+
+    if (resultadoDiv) {
+        resultadoDiv.innerHTML = html;
+        resultadoDiv.classList.remove("hidden");
+        resultadoDiv.scrollIntoView({ behavior: "smooth" });
+    }
+}
+
+// DICAS DE REDAÇÃO - CARDS NO LADO DIREITO
+function exibirDicasRedacao() {
+    const container = document.getElementById("dicas-redacao");
+    if (!container) return;
+
+    const dicasHTML = `
+        <div class="dicas-redacao-lateral">
+            <div class="dica-card-redacao">
+                <div class="dica-header-redacao">
+                    <span class="dica-icon">📝</span>
+                    <h4>Como Estruturar sua Redação</h4>
+                </div>
+                <div class="dica-content-redacao">
+                    <p><strong>Introdução (1 parágrafo):</strong></p>
+                    <ul>
+                        <li>Apresente o tema</li>
+                        <li>Contextualize o problema</li>
+                        <li>Apresente sua tese</li>
+                    </ul>
+                    
+                    <p><strong>Desenvolvimento (2-3 parágrafos):</strong></p>
+                    <ul>
+                        <li>Argumento 1 + exemplos</li>
+                        <li>Argumento 2 + dados</li>
+                        <li>Argumento 3 (opcional)</li>
+                    </ul>
+                    
+                    <p><strong>Conclusão (1 parágrafo):</strong></p>
+                    <ul>
+                        <li>Retome a tese</li>
+                        <li>Apresente proposta de intervenção</li>
+                        <li>Finalize de forma impactante</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="dica-card-redacao">
+                <div class="dica-header-redacao">
+                    <span class="dica-icon">🎯</span>
+                    <h4>O que é Necessário</h4>
+                </div>
+                <div class="dica-content-redacao">
+                    <ul>
+                        <li><strong>Mínimo 20 linhas</strong> - Ideal: 25-30 linhas</li>
+                        <li><strong>Letra legível</strong> - Evite rasuras</li>
+                        <li><strong>Respeitar margens</strong> - Não ultrapasse</li>
+                        <li><strong>Parágrafos claros</strong> - Faça recuos</li>
+                        <li><strong>Título opcional</strong> - Se fizer, centralize</li>
+                        <li><strong>Norma culta</strong> - Sem gírias ou erros</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="dica-card-redacao">
+                <div class="dica-header-redacao">
+                    <span class="dica-icon">💡</span>
+                    <h4>Dicas para uma Boa Redação</h4>
+                </div>
+                <div class="dica-content-redacao">
+                    <ul>
+                        <li><strong>Leia atentamente</strong> a proposta</li>
+                        <li><strong>Use todos os textos</strong> de apoio</li>
+                        <li><strong>Faça um rascunho</strong> antes</li>
+                        <li><strong>Conectivos</strong> enriquecem o texto</li>
+                        <li><strong>Revisão final</strong> é essencial</li>
+                        <li><strong>Evite generalizações</strong> - seja específico</li>
+                        <li><strong>Cronometre</strong> seu tempo</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="dica-card-redacao">
+                <div class="dica-header-redacao">
+                    <span class="dica-icon">⚠️</span>
+                    <h4>O que Evitar</h4>
+                </div>
+                <div class="dica-content-redacao">
+                    <ul>
+                        <li>Fugir do tema proposto</li>
+                        <li>Usar primeira pessoa</li>
+                        <li>Argumentos sem fundamento</li>
+                        <li>Propostas inviáveis</li>
+                        <li>Desrespeitar direitos humanos</li>
+                        <li>Texto muito curto ou longo</li>
+                        <li>Repetição de palavras</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    `;
+
+    container.innerHTML = dicasHTML;
+}
+
+// DASHBOARD - SIMPLIFICADO (SEM MATÉRIAS)
+function carregarDashboard() {
+    const container = document.getElementById("dashboard-content");
+    if (!container) return;
+
+    container.innerHTML = '<div class="text-center"><div class="loading"></div><p>Carregando estatísticas...</p></div>';
+
+    fetch("/api/dashboard/estatisticas-areas")
+    .then(response => {
+        if (!response.ok) {
+            throw new Error("Erro ao carregar dashboard");
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data.success) {
+            exibirDashboardPorArea(data);
+        } else {
+            container.innerHTML = '<div class="text-center"><p>Erro ao carregar dashboard: ' + data.error + "</p></div>";
+        }
+    })
+    .catch(error => {
+        console.error("Erro ao carregar dashboard:", error);
+        container.innerHTML = '<div class="text-center"><p>Erro de rede ao buscar estatísticas.</p></div>';
+    });
+}
+
+function exibirDashboardPorArea(data) {
+    const container = document.getElementById("dashboard-content");
+    if (!container) return;
+
+    const stats = data.stats_gerais;
+
+    if (stats.total_simulados_feitos === 0) {
+        container.innerHTML = '<div class="empty-state">' +
+            '<span class="empty-icon">📊</span>' +
+            '<h4>Nenhum simulado realizado ainda.</h4>' +
+            '<p>Seu progresso aparecerá aqui assim que você completar seu primeiro simulado.</p>' +
+            '<button class="btn btn-primary" onclick="navegarPara(\'tela-simulado\')">🚀 Começar meu primeiro simulado</button>' +
+        "</div>";
+        return;
+    }
+
+    let html = '<div class="dashboard-header">' +
+        '<h3>📈 Dashboard de Desempenho</h3>' +
+        '<p class="dashboard-subtitle">Acompanhe seu progresso por área de estudo</p>' +
+    "</div>";
+
+    // Cards de estatísticas principais
+    html += '<div class="stats-grid-profissional">' +
+        '<div class="stat-card-profissional primary">' +
+            '<div class="stat-icon">📝</div>' +
+            '<div class="stat-content">' +
+                '<div class="stat-number">' + stats.total_simulados_feitos + "</div>" +
+                '<div class="stat-label">Simulados Realizados</div>' +
+            "</div>" +
+        "</div>" +
+        '<div class="stat-card-profissional success">' +
+            '<div class="stat-icon">🎯</div>' +
+            '<div class="stat-content">' +
+                '<div class="stat-number">' + stats.media_geral_percentual + "%</div>" +
+                '<div class="stat-label">Média de Acertos</div>' +
+            "</div>" +
+        "</div>" +
+        '<div class="stat-card-profissional info">' +
+            '<div class="stat-icon">✅</div>' +
+            '<div class="stat-content">' +
+                '<div class="stat-number">' + stats.total_acertos_geral + "</div>" +
+                '<div class="stat-label">Total de Acertos</div>' +
+            "</div>" +
+        "</div>" +
+        '<div class="stat-card-profissional ' + (stats.melhor_desempenho ? 'warning' : 'secondary') + '">' +
+            '<div class="stat-icon">⭐</div>' +
+            '<div class="stat-content">' +
+                '<div class="stat-number">' + (stats.melhor_desempenho ? stats.melhor_desempenho.percentual + '%' : '0%') + "</div>" +
+                '<div class="stat-label">Melhor Desempenho</div>' +
+            "</div>" +
+        "</div>" +
+    "</div>";
+
+    // Desempenho por área (SIMPLIFICADO - sem matérias)
+    if (data.desempenho_por_area && data.desempenho_por_area.length > 0) {
+        html += '<div class="card">' +
+            '<h4>📚 Desempenho por Área de Estudo</h4>' +
+            '<div class="areas-dashboard-simplificado">';
+
+        data.desempenho_por_area.forEach(area => {
+            const percentual = area.percentual || 0;
+            const corClasse = percentual >= 70 ? "acima-70" : percentual >= 50 ? "acima-50" : "abaixo-50";
+            const icone = getIconeArea(area.area);
+            
+            html += `<div class="area-dashboard-simplificado ${corClasse}">
+                <div class="area-simplificado-header">
+                    <span class="area-icon">${icone}</span>
+                    <div class="area-info">
+                        <h5>${area.area}</h5>
+                        <div class="area-stats-simplificado">
+                            <span class="stat">${area.total_questoes} questões</span>
+                            <span class="stat">${area.total_respondidas} respondidas</span>
+                        </div>
+                    </div>
+                    <div class="area-percentual-simplificado">
+                        <span class="percentual">${percentual}%</span>
+                        <div class="progress-bar-simplificado">
+                            <div class="progress-fill-simplificado" style="width: ${percentual}%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>`;
+        });
+
+        html += "</div></div>";
+    }
+
+    // Histórico recente
+    if (data.historico_recente && data.historico_recente.length > 0) {
+        html += '<div class="card">' +
+            '<h4>📅 Últimos Simulados</h4>' +
+            '<div class="table-container">' +
+                '<table class="historico-table">' +
+                    '<thead>' +
+                        '<tr>' +
+                            '<th>Data</th>' +
+                            '<th>Questões</th>' +
+                            '<th>Acertos</th>' +
+                            '<th>Desempenho</th>' +
+                        "</tr>" +
+                    "</thead>" +
+                    '<tbody>';
+
+        data.historico_recente.forEach(hist => {
+            const dataFormatada = new Date(hist.data).toLocaleDateString("pt-BR");
+            const notaClass = hist.percentual >= 70 ? "nota-boa" : hist.percentual >= 50 ? "nota-media" : "nota-baixa";
+
+            html += '<tr>' +
+                '<td>' + dataFormatada + "</td>" +
+                '<td class="text-center">' + hist.total_questoes + "</td>" +
+                '<td class="text-center">' + hist.total_acertos + "</td>" +
+                '<td class="nota-cell ' + notaClass + '">' + hist.percentual + "%</td>" +
+            "</tr>";
+        });
+
+        html += "</tbody></table></div></div>";
+    }
+
+    container.innerHTML = html;
+}
+
+// Funções de exibição
+function exibirBancas(bancas) {
+    const selectBanca = document.getElementById("select-banca");
+    if (!selectBanca) return;
+    
+    let optionsHTML = '<option value="todas">Todas as Bancas (Área Livre)</option>';
+    
+    if (bancas && bancas.length > 0) {
+         bancas.forEach(banca => {
+            optionsHTML += '<option value="' + banca.banca + '">' + banca.banca + ' (' + banca.total_questoes + ' Q)</option>';
+        });
+    }
+
+    selectBanca.innerHTML = optionsHTML;
+}
+
+function exibirAreas(areas) {
+    const container = document.getElementById("materias-container");
+    if (!container) return;
+
+    container.innerHTML = '';
+
+    if (!areas || !Array.isArray(areas) || areas.length === 0) {
+        container.innerHTML = '<p class="no-data">Nenhuma área de estudo encontrada.</p>';
+        return;
+    }
+
+    const grid = document.createElement("div");
+    grid.className = "areas-grid";
+
+    areas.forEach(area => {
+        const areaNome = area.nome_area;
+        const totalQuestoes = area.total_questoes;
+        const icone = getIconeArea(areaNome);
+
+        const card = document.createElement("div");
+        card.className = "area-card";
+        card.setAttribute("onclick", "selecionarArea(this)");
+
+        card.innerHTML = '<input type="checkbox" value="' + areaNome + '" class="check-area">' +
+                        '<span class="area-icon">' + icone + '</span>' +
+                        '<div class="area-title">' + areaNome + '</div>' +
+                        '<div class="area-count">' + totalQuestoes + ' Questões</div>';
+        grid.appendChild(card);
+    });
+
+    container.appendChild(grid);
+}
+
+function getIconeArea(areaNome) {
+    const icones = {
+        "Língua Portuguesa": "📝",
+        "Exatas e Raciocínio Lógico": "🔢",
+        "Conhecimentos Jurídicos": "⚖️",
+        "Conhecimentos Bancários e Vendas": "💰",
+        "Psicologia Clínica e Saúde": "🧠",
+        "Gestão de Pessoas": "👥",
+        "Informática": "💻",
+        "Atualidades Gerais": "📰"
+    };
+    return icones[areaNome] || "❓";
+}
+
+function selecionarArea(cardElement) {
+    cardElement.classList.toggle("selected");
+    const checkbox = cardElement.querySelector(".check-area");
+    checkbox.checked = !checkbox.checked;
+}
+
+// Inicialização
+document.addEventListener("DOMContentLoaded", function() {
+    console.log("🚀 ConcursoIA inicializado");
+    SessionManager.remove("simulado_questoes");
+    SessionManager.remove("simulado_respostas");
+    SessionManager.remove("indice_atual");
+    
+    carregarConteudoInicial();
+    navegarPara("tela-inicio");
+});

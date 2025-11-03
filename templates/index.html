@@ -1,0 +1,177 @@
+﻿<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ConcursoIA - Sistema Inteligente de Estudos</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="header">
+        <div class="container">
+            <div class="nav-tabs">
+                <button class="nav-tab active" onclick="navegarPara('tela-inicio')">🏠 Início</button>
+                <button class="nav-tab" onclick="navegarPara('tela-simulado')">📝 Simulados</button>
+                <button class="nav-tab" onclick="navegarPara('tela-redacao')">✍️ Redação</button>
+                <button class="nav-tab" onclick="navegarPara('tela-dashboard')">📊 Dashboard</button>
+            </div>
+        </div>
+    </div>
+    
+    <div class="container">
+        
+        <div id="tela-inicio" class="tela">
+            <div class="hero-section">
+                <div class="hero-visual-emoticon">
+                    <span class="rotating-brain">🧠</span>
+                </div>
+                <h1 class="hero-title">ConcursoIA</h1>
+                <p class="hero-subtitle">Sua Plataforma Inteligente de Estudos para Concursos Públicos</p>
+                <p class="hero-tagline">Combine o poder da <span class="text-brilhante">Inteligência Artificial</span> com métodos de estudo comprovados para alcançar a <span class="text-brilhante">aprovacão desejada</span>.</p>
+
+                <div class="cta-standard-large">
+                    <h2>Pronto para Transformar Seus Estudos?</h2>
+                    <p>Junte-se a milhares de concurseiros que já elevaram seu desempenho com tecnologia inteligente</p>
+                </div>
+
+                <div class="how-it-works">
+                    <h2>Como o ConcursoIA Transforma Seus Estudos</h2>
+                    <div class="steps-horizontal">
+                        <div class="step-horizontal">
+                            <div class="step-number-horizontal">1</div>
+                            <p class="step-text-horizontal">Personalize simulados com base nas disciplinas que você mais precisa estudar</p>
+                        </div>
+                        <div class="step-horizontal">
+                            <div class="step-number-horizontal">2</div>
+                            <p class="step-text-horizontal">Receba suporte inteligente com dicas, fórmulas e explicações em tempo real</p>
+                        </div>
+                        <div class="step-horizontal">
+                            <div class="step-number-horizontal">3</div>
+                            <p class="step-text-horizontal">Desenvolva sua redação com correção detalhada por IA especializada</p>
+                        </div>
+                        <div class="step-horizontal">
+                            <div class="step-number-horizontal">4</div>
+                            <p class="step-text-horizontal">Acompanhe sua evolução e identifique os pontos que precisam de mais atenção</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="features-grid">
+                    <div class="feature-card" onclick="navegarPara('tela-simulado')">
+                        <span class="feature-icon">📝</span>
+                        <h3>Simulados Inteligentes</h3>
+                        <p>Domine todas as disciplinas com questões selecionadas por IA. Receba feedback detalhado, dicas personalizadas e acompanhe sua evolução.</p>
+                        <div class="feature-arrow">→</div>
+                    </div>
+                    
+                    <div class="feature-card" onclick="navegarPara('tela-redacao')">
+                        <span class="feature-icon">✍️</span>
+                        <h3>Correção de Redação com IA</h3>
+                        <p>Desenvolva sua escrita com correções profissionais. Análise por competências, sugestões de melhoria e dicas específicas.</p>
+                        <div class="feature-arrow">→</div>
+                    </div>
+                    
+                    <div class="feature-card" onclick="navegarPara('tela-dashboard')">
+                        <span class="feature-icon">📊</span>
+                        <h3>Dashboard de Performance</h3>
+                        <p>Visualize seu progresso com métricas avançadas. Identifique pontos fortes e receba recomendações personalizadas.</p>
+                        <div class="feature-arrow">→</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="tela-simulado" class="tela hidden">
+            <div id="selecao-simulado">
+                <div class="card">
+                    <h2>Montar Simulado Personalizado</h2>
+                    <p>Selecione as áreas de estudo, a banca (opcional) e a quantidade de questões.</p>
+                    <div class="form-group">
+                        <label>1. Selecione as Áreas de Estudo:</label>
+                        <div id="materias-container">
+                            <div class="loading"></div>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="select-banca">2. Selecione a Banca (Opcional):</label>
+                        <select id="select-banca" class="form-control">
+                            <option>Carregando...</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="quantidade-questoes">3. Quantidade de Questões:</label>
+                        <select id="quantidade-questoes" class="form-control">
+                            <option value="10">10 Questões (Rápido)</option>
+                            <option value="20">20 Questões (Padrão)</option>
+                            <option value="40">40 Questões (Completo)</option>
+                            <option value="295">295 Questões (Modo Teste)</option> 
+                        </select>
+                    </div>
+                    <button class="btn btn-primary btn-large" onclick="iniciarSimulado()">🚀 Iniciar Simulado</button>
+                </div>
+            </div>
+            <div id="simulado-ativo" class="hidden"></div>
+            <div id="tela-resultado" class="hidden">
+                <div class="card text-center">
+                    <h2>🎉 Simulado Finalizado!</h2>
+                    <p>Veja seu desempenho abaixo:</p>
+                    <div class="resultado-sumario">
+                        <div class="resultado-item">
+                            <strong>Acertos:</strong>
+                            <span id="resultado-acertos">0/0</span>
+                        </div>
+                        <div class="resultado-item">
+                            <strong>Percentual:</strong>
+                            <span id="resultado-percentual">0%</span>
+                        </div>
+                        <div class="resultado-item">
+                            <strong>Nota Final:</strong>
+                            <span id="resultado-nota">0%</span>
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" onclick="navegarPara('tela-dashboard')">Ver Dashboard Detalhado</button>
+                    <button class="btn" onclick="navegarPara('tela-simulado')">Fazer outro simulado</button>
+                </div>
+            </div>
+        </div>
+        
+        <div id="tela-redacao" class="tela hidden">
+            <div class="redacao-container">
+                <div class="redacao-editor">
+                    <div class="card">
+                        <h2>✍️ Correção de Redação com IA</h2>
+                        <p>Selecione um tema, cole sua redação e receba uma análise instantânea.</p>
+                        <div class="form-group">
+                            <label for="temas-redacao">Selecione o Tema:</label>
+                            <select id="temas-redacao" class="form-control"></select>
+                        </div>
+                        <div class="form-group">
+                            <label for="texto-redacao">Cole sua redação aqui:</label>
+                            <textarea id="texto-redacao" class="form-control" rows="15" placeholder="Digite ou cole sua redação..."></textarea>
+                        </div>
+                        <button id="btn-corrigir" class="btn btn-primary btn-large" onclick="corrigirRedacao()">🔍 Corrigir Redação</button>
+                    </div>
+                    <div id="resultado-correcao" class="hidden"></div>
+                </div>
+                
+                <div class="redacao-dicas">
+                    <div class="card">
+                        <h3>💡 Dicas para uma Boa Redação</h3>
+                        <p>Confira as orientações para atingir a nota máxima:</p>
+                        <div id="dicas-redacao">
+                            </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div id="tela-dashboard" class="tela hidden">
+            <div id="dashboard-content">
+                <div class="loading"></div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+</body>
+</html>
