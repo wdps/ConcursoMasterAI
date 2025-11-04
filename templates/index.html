@@ -85,21 +85,10 @@
             <div id="selecao-simulado">
                 <div class="card">
                     <h2>Montar Simulado Personalizado</h2>
-                    <p>Selecione as áreas de estudo, a banca (opcional) e a quantidade de questões.</p>
+                    <p>Configure seu simulado personalizado selecionando as opções abaixo:</p>
+                    
                     <div class="form-group">
-                        <label>1. Selecione as Áreas de Estudo:</label>
-                        <div id="materias-container">
-                            <div class="loading"></div>
-                        </div>
-                    </div>
-                    <div class="form-group">
-                        <label for="select-banca">2. Selecione a Banca (Opcional):</label>
-                        <select id="select-banca" class="form-control">
-                            <option>Carregando...</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label for="quantidade-questoes">3. Quantidade de Questões:</label>
+                        <label for="quantidade-questoes">1. Quantidade de Questões:</label>
                         <select id="quantidade-questoes" class="form-control">
                             <option value="10">10 Questões (Rápido)</option>
                             <option value="20">20 Questões (Padrão)</option>
@@ -107,6 +96,21 @@
                             <option value="295">295 Questões (Modo Teste)</option> 
                         </select>
                     </div>
+
+                    <div class="form-group">
+                        <label for="select-banca">2. Selecione a Banca (Opcional):</label>
+                        <select id="select-banca" class="form-control">
+                            <option>Carregando...</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label>3. Selecione as Áreas de Estudo:</label>
+                        <div id="materias-container">
+                            <div class="loading"></div>
+                        </div>
+                    </div>
+
                     <button class="btn btn-primary btn-large" onclick="iniciarSimulado()">🚀 Iniciar Simulado</button>
                 </div>
             </div>
@@ -159,7 +163,8 @@
                         <h3>💡 Dicas para uma Boa Redação</h3>
                         <p>Confira as orientações para atingir a nota máxima:</p>
                         <div id="dicas-redacao">
-                            </div>
+                            <!-- Dicas serão carregadas aqui -->
+                        </div>
                     </div>
                 </div>
             </div>

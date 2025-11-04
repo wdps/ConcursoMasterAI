@@ -40,42 +40,34 @@ function carregarConteudoInicial() {
 
 function carregarBancas() {
     fetch("/api/bancas")
-    .then(response => {
-        if (!response.ok) { throw new Error('Erro 404 ou 500 na API /api/bancas'); }
-        return response.json();
-    })
+    .then(response => response.json())
     .then(data => {
-        if (data.success && data.bancas) {
+        if (data.success) {
             exibirBancas(data.bancas);
-        } else {
-            throw new Error(data.error || "Formato de dados de bancas inesperado.");
         }
     })
     .catch(error => {
         console.error("Erro ao carregar bancas:", error);
-        exibirBancas([]); 
     });
 }
 
 function carregarAreas() {
+    const cachedAreas = SessionManager.get("areas_cache");
+    if (cachedAreas) {
+        exibirAreas(cachedAreas);
+        return;
+    }
+
     fetch("/api/areas")
-    .then(response => {
-        if (!response.ok) { throw new Error('Erro 404 ou 500 na API /api/areas'); }
-        return response.json();
-    })
+    .then(response => response.json())
     .then(data => {
-        if (data.success && data.areas) {
+        if (data.success) {
+            SessionManager.set("areas_cache", data.areas);
             exibirAreas(data.areas);
-        } else {
-            throw new Error(data.error || "Formato de dados de áreas inesperado.");
         }
     })
     .catch(error => {
         console.error("Erro ao carregar áreas:", error);
-        const container = document.getElementById("materias-container");
-        if (container) {
-            container.innerHTML = '<p class="no-data">Erro ao carregar áreas. Tente recarregar a página.</p>';
-        }
     });
 }
 
@@ -141,11 +133,11 @@ function navegarPara(tela) {
     }
 }
 
-// SIMULADO - Funções
+// SIMULADO - FUNÇÕES CORRIGIDAS
 function iniciarSimulado() {
-    // Lê TODOS os checkboxes (simples e sub-áreas)
+    // CORREÇÃO: Lê apenas os 'sub-materia-check'
     const areasSelecionadas = Array.from(
-        document.querySelectorAll("#materias-container .area-checkbox-simple:checked, #materias-container .sub-area-checkbox:checked")
+        document.querySelectorAll("#materias-container .sub-materia-check:checked")
     ).map(cb => cb.value);
     
     const bancaSelecionada = document.getElementById("select-banca").value;
@@ -171,16 +163,18 @@ function iniciarSimulado() {
             "Content-Type": "application/json",
         },
         body: JSON.stringify({
-            areas: areasSelecionadas,
+            areas: areasSelecionadas, // Envia as DISCIPLINAS (ex: "Direito Administrativo")
             banca: bancaSelecionada,
             quantidade: quantidade 
         })
     })
     .then(response => {
         if (!response.ok) {
+            // Tenta ler o JSON de erro do backend (se houver)
              return response.json().then(errData => {
                  throw new Error(errData.error || "Erro na resposta do servidor: " + response.status);
              }).catch(() => {
+                 // Se o backend não mandar JSON (ex: erro 500)
                  throw new Error("Erro na resposta do servidor: " + response.status);
              });
         }
@@ -209,7 +203,7 @@ function iniciarSimulado() {
     });
 }
 
-// BOTÕES DO SIMULADO
+// BOTÕES DO SIMULADO - CORRIGIDOS E PROFISSIONAIS
 function mostrarTelaSimuladoAtivo(totalQuestoes) {
     const selecaoContainer = document.getElementById("selecao-simulado");
     const simuladoAtivoContainer = document.getElementById("simulado-ativo");
@@ -323,7 +317,7 @@ function exibirQuestao(questao, indice, total, respostaAnterior) {
         alternativasContainer.innerHTML = '';
 
         Object.entries(questao.alternativas).forEach(([letra, texto]) => {
-            if (letra === "e" && (texto === null || texto === "" || texto === undefined)) {
+            if (letra === "e" && (texto === null || texto === "")) {
                 return;
             }
 
@@ -557,7 +551,7 @@ function exibirResultado(relatorio) {
     if (resultado) resultado.classList.remove("hidden");
 }
 
-// REDAÇÃO
+// REDAÇÃO - COM DICAS NO LADO DIREITO
 function corrigirRedacao() {
     const temaSelect = document.getElementById("temas-redacao");
     const textoRedacao = document.getElementById("texto-redacao").value;
@@ -692,7 +686,7 @@ function exibirCorrecaoRedacao(correcao) {
     }
 }
 
-// DICAS DE REDAÇÃO
+// DICAS DE REDAÇÃO - CARDS NO LADO DIREITO
 function exibirDicasRedacao() {
     const container = document.getElementById("dicas-redacao");
     if (!container) return;
@@ -786,7 +780,7 @@ function exibirDicasRedacao() {
     container.innerHTML = dicasHTML;
 }
 
-// DASHBOARD
+// DASHBOARD - SIMPLIFICADO (SEM MATÉRIAS)
 function carregarDashboard() {
     const container = document.getElementById("dashboard-content");
     if (!container) return;
@@ -801,10 +795,10 @@ function carregarDashboard() {
         return response.json();
     })
     .then(data => {
-        if (data.success && data.stats_gerais) {
+        if (data.success) {
             exibirDashboardPorArea(data);
         } else {
-            container.innerHTML = '<div class="text-center"><p>Erro ao carregar dashboard: ' + (data.error || 'Formato de dados inválido') + "</p></div>";
+            container.innerHTML = '<div class="text-center"><p>Erro ao carregar dashboard: ' + data.error + "</p></div>";
         }
     })
     .catch(error => {
@@ -819,11 +813,22 @@ function exibirDashboardPorArea(data) {
 
     const stats = data.stats_gerais;
 
+    if (stats.total_simulados_feitos === 0) {
+        container.innerHTML = '<div class="empty-state">' +
+            '<span class="empty-icon">📊</span>' +
+            '<h4>Nenhum simulado realizado ainda.</h4>' +
+            '<p>Seu progresso aparecerá aqui assim que você completar seu primeiro simulado.</p>' +
+            '<button class="btn btn-primary" onclick="navegarPara(\'tela-simulado\')">🚀 Começar meu primeiro simulado</button>' +
+        "</div>";
+        return;
+    }
+
     let html = '<div class="dashboard-header">' +
         '<h3>📈 Dashboard de Desempenho</h3>' +
         '<p class="dashboard-subtitle">Acompanhe seu progresso por área de estudo</p>' +
     "</div>";
 
+    // Cards de estatísticas principais
     html += '<div class="stats-grid-profissional">' +
         '<div class="stat-card-profissional primary">' +
             '<div class="stat-icon">📝</div>' +
@@ -855,23 +860,31 @@ function exibirDashboardPorArea(data) {
         "</div>" +
     "</div>";
 
-    if (data.stats_gerais.stats_por_disciplina) {
+    // Desempenho por área (SIMPLIFICADO - sem matérias)
+    if (data.desempenho_por_area && data.desempenho_por_area.length > 0) {
         html += '<div class="card">' +
-            '<h4>📚 Questões por Área de Estudo</h4>' +
+            '<h4>📚 Desempenho por Área de Estudo</h4>' +
             '<div class="areas-dashboard-simplificado">';
 
-        Object.entries(data.stats_gerais.stats_por_disciplina).forEach(([areaNome, totalQuestoes]) => {
-            const percentual = 0;
-            const corClasse = "abaixo-50";
-            const icone = getIconeArea(areaNome);
+        data.desempenho_por_area.forEach(area => {
+            const percentual = area.percentual || 0;
+            const corClasse = percentual >= 70 ? "acima-70" : percentual >= 50 ? "acima-50" : "abaixo-50";
+            const icone = getIconeArea(area.area);
             
             html += `<div class="area-dashboard-simplificado ${corClasse}">
                 <div class="area-simplificado-header">
                     <span class="area-icon">${icone}</span>
                     <div class="area-info">
-                        <h5>${areaNome}</h5>
+                        <h5>${area.area}</h5>
                         <div class="area-stats-simplificado">
-                            <span class="stat">${totalQuestoes} questões no banco</span>
+                            <span class="stat">${area.total_questoes} questões</span>
+                            <span class="stat">${area.total_respondidas} respondidas</span>
+                        </div>
+                    </div>
+                    <div class="area-percentual-simplificado">
+                        <span class="percentual">${percentual}%</span>
+                        <div class="progress-bar-simplificado">
+                            <div class="progress-fill-simplificado" style="width: ${percentual}%"></div>
                         </div>
                     </div>
                 </div>
@@ -880,34 +893,65 @@ function exibirDashboardPorArea(data) {
 
         html += "</div></div>";
     }
-    
+
+    // Histórico recente
+    if (data.historico_recente && data.historico_recente.length > 0) {
+        html += '<div class="card">' +
+            '<h4>📅 Últimos Simulados</h4>' +
+            '<div class="table-container">' +
+                '<table class="historico-table">' +
+                    '<thead>' +
+                        '<tr>' +
+                            '<th>Data</th>' +
+                            '<th>Questões</th>' +
+                            '<th>Acertos</th>' +
+                            '<th>Desempenho</th>' +
+                        "</tr>" +
+                    "</thead>" +
+                    '<tbody>';
+
+        data.historico_recente.forEach(hist => {
+            const dataFormatada = new Date(hist.data).toLocaleDateString("pt-BR");
+            const notaClass = hist.percentual >= 70 ? "nota-boa" : hist.percentual >= 50 ? "nota-media" : "nota-baixa";
+
+            html += '<tr>' +
+                '<td>' + dataFormatada + "</td>" +
+                '<td class="text-center">' + hist.total_questoes + "</td>" +
+                '<td class="text-center">' + hist.total_acertos + "</td>" +
+                '<td class="nota-cell ' + notaClass + '">' + hist.percentual + "%</td>" +
+            "</tr>";
+        });
+
+        html += "</tbody></table></div></div>";
+    }
+
     container.innerHTML = html;
 }
 
-// FUNÇÕES DE EXIBIÇÃO - COMPORTAMENTO INTELIGENTE
+// Funções de exibição
 function exibirBancas(bancas) {
     const selectBanca = document.getElementById("select-banca");
     if (!selectBanca) return;
     
-    let optionsHTML = '<option value="(Banca Padrão)">Todas as Bancas (Área Livre)</option>';
+    let optionsHTML = '<option value="todas">Todas as Bancas (Área Livre)</option>';
     
     if (bancas && bancas.length > 0) {
          bancas.forEach(banca => {
-            if (banca.banca !== "(Banca Padrão)") {
-                optionsHTML += '<option value="' + banca.banca + '">' + banca.banca + ' (' + banca.total_questoes + ' Q)</option>';
-            }
+            optionsHTML += '<option value="' + banca.banca + '">' + banca.banca + ' (' + banca.total_questoes + ' Q)</option>';
         });
     }
 
     selectBanca.innerHTML = optionsHTML;
 }
 
-// COMPORTAMENTO INTELIGENTE - ÁREAS DE ESTUDO
+// --- Funções de Seleção de Simulado (Refatoradas para Agrupamento) ---
+
 function exibirAreas(areas) {
     const container = document.getElementById("materias-container");
     if (!container) return;
 
     container.innerHTML = '';
+    container.classList.remove("loading-placeholder");
 
     if (!areas || !Array.isArray(areas) || areas.length === 0) {
         container.innerHTML = '<p class="no-data">Nenhuma área de estudo encontrada.</p>';
@@ -915,114 +959,91 @@ function exibirAreas(areas) {
     }
 
     const grid = document.createElement("div");
-    grid.className = "areas-grid-inteligente";
+    grid.className = "areas-grid-agrupada"; // Nova classe
 
     areas.forEach(area => {
-        const isMultiplo = area.sub_materias.length > 1;
-        
-        const card = document.createElement("div");
-        card.className = "area-card-inteligente";
-        card.dataset.areaId = area.area_principal.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
-        
-        if (isMultiplo) {
-            // ÁREAS COM MÚLTIPLAS SUBMATÉRIAS
-            card.innerHTML = `
-                <div class="area-header" onclick="toggleAreaSelection(this, true)">
-                    <span class="area-card-icon">${getIconeArea(area.area_principal)}</span>
-                    <div class="area-info">
-                        <h4 class="area-title">${area.area_principal}</h4>
-                        <span class="area-count">${area.total_questoes} questões</span>
-                    </div>
-                    <div class="area-controls">
-                        <span class="expand-icon">▶</span>
-                    </div>
-                </div>
-                <div class="sub-areas-container hidden">
-                    ${area.sub_materias.map(sub => `
-                        <label class="sub-area-item" onclick="event.stopPropagation()">
-                            <input type="checkbox" value="${sub}" class="sub-area-checkbox" 
-                                   onchange="updateAreaState('${area.area_principal.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()}')">
-                            <span class="checkmark">✓</span>
-                            ${sub}
-                        </label>
-                    `).join('')}
-                </div>
-            `;
-        } else {
-            // ÁREAS COM APENAS 1 SUBMATÉRIA
-            card.innerHTML = `
-                <div class="area-header" onclick="toggleAreaSelection(this, false)">
-                    <span class="area-card-icon">${getIconeArea(area.area_principal)}</span>
-                    <div class="area-info">
-                        <h4 class="area-title">${area.area_principal}</h4>
-                        <span class="area-count">${area.total_questoes} questões</span>
-                    </div>
-                    <div class="area-controls">
-                        <input type="checkbox" class="area-checkbox-simple" value="${area.sub_materias[0]}" 
-                               onchange="event.stopPropagation()">
-                    </div>
-                </div>
-            `;
-            
-            // Para áreas simples, o checkbox controla o estado visual
-            const checkbox = card.querySelector('.area-checkbox-simple');
-            checkbox.addEventListener('change', function() {
-                card.classList.toggle('selected', this.checked);
-            });
-        }
+        const areaNome = area.area_principal;
+        const totalQuestoes = area.total_questoes;
+        const icone = getIconeArea(areaNome);
+        const subMaterias = area.sub_materias;
+        const areaId = areaNome.replace(/\s+/g, '-').toLowerCase(); // ID único (ex: "conhecimentos-juridicos")
 
+        const card = document.createElement("div");
+        card.className = "area-card-principal";
+        
+        let subMateriasHTML = '';
+        if (subMaterias.length > 1) { // Só mostra sub-matérias se houver mais de 1
+            subMateriasHTML = <div id="sub-${areaId}" class="sub-materias-container hidden">;
+            subMaterias.forEach(subMateria => {
+                subMateriasHTML += 
+                    <div class="sub-materia-item">
+                        <input type="checkbox" 
+                               value="""" 
+                               class="sub-materia-check" 
+                               id="check-${subMateria.replace(/\s+/g, '-')}"
+                               data-parent-card="""">
+                        <label for="check-${subMateria.replace(/\s+/g, '-')}">$subMateria</label>
+                    </div>
+                ;
+            });
+            subMateriasHTML += </div>;
+        }
+        
+        // Se houver apenas 1 sub-matéria, o card principal funciona como o checkbox
+        const checkboxPrincipalHTML = (subMaterias.length > 1) ?
+            <input type="checkbox" id="check-${areaId}" class="check-area-principal" onclick="selecionarAreaPrincipal(this, '${areaId}')"> :
+            <input type="checkbox" value="""" id="check-${areaId}" class="sub-materia-check" data-parent-card="""">;
+
+        card.innerHTML = 
+            <div class="area-card-header" onclick="toggleSubmaterias(event, '${areaId}', ${subMaterias.length} > 1)">
+                ${checkboxPrincipalHTML}
+                <span class="area-icon">$icone</span>
+                <div class="area-title">$areaNome</div>
+                <div class="area-count">$totalQuestoes Questões</div>
+                ${(subMaterias.length > 1) ? <span id="expand-${areaId}" class="expand-icon">[+]</span> : ''}
+            </div>
+            ${subMateriasHTML}
+        ;
+        
         grid.appendChild(card);
     });
 
     container.appendChild(grid);
 }
 
-// FUNÇÃO: Alternar seleção de área
-function toggleAreaSelection(headerElement, isMultiplo) {
-    const card = headerElement.closest('.area-card-inteligente');
+// NOVA FUNÇÃO: Expande/Contrai as sub-matérias
+function toggleSubmaterias(event, areaId, hasSubmaterias) {
+    // Impede que o clique no header acione o checkbox (e vice-versa)
+    if (event.target.type === 'checkbox') {
+        return;
+    }
     
-    if (isMultiplo) {
-        // Área com múltiplas submatérias - expandir/recolher
-        const subContainer = card.querySelector('.sub-areas-container');
-        const expandIcon = card.querySelector('.expand-icon');
-        
-        subContainer.classList.toggle('hidden');
-        card.classList.toggle('expanded');
-        
-        // Se estiver expandindo, atualiza o estado visual
-        if (!subContainer.classList.contains('hidden')) {
-            updateAreaState(card.dataset.areaId);
+    if (!hasSubmaterias) {
+        // Se não tem submatérias, clicar no card seleciona o checkbox
+        const chk = document.getElementById(check-${areaId});
+        if(chk) {
+            chk.checked = !chk.checked;
         }
-    } else {
-        // Área com 1 submatéria - selecionar/desselecionar diretamente
-        const checkbox = card.querySelector('.area-checkbox-simple');
-        checkbox.checked = !checkbox.checked;
-        checkbox.dispatchEvent(new Event('change'));
+        return;
+    }
+
+    const subContainer = document.getElementById(sub-${areaId});
+    const expandIcon = document.getElementById(expand-${areaId});
+    
+    if (subContainer) {
+        const isHidden = subContainer.classList.toggle("hidden");
+        if (expandIcon) {
+            expandIcon.textContent = isHidden ? "[+]" : "[-]";
+        }
     }
 }
 
-// FUNÇÃO: Atualizar estado da área (múltiplas submatérias)
-function updateAreaState(areaId) {
-    const card = document.querySelector(`[data-area-id="${areaId}"]`);
-    const checkboxes = card.querySelectorAll('.sub-area-checkbox');
-    const allChecked = Array.from(checkboxes).every(cb => cb.checked);
-    const someChecked = Array.from(checkboxes).some(cb => cb.checked);
-    
-    // Atualizar estado visual do card
-    card.classList.toggle('selected', allChecked);
-    card.classList.toggle('partial', someChecked && !allChecked);
-}
-
-// FUNÇÃO: Selecionar todas as submatérias de uma área
-function selectAllSubAreas(areaId, select) {
-    const card = document.querySelector(`[data-area-id="${areaId}"]`);
-    const checkboxes = card.querySelectorAll('.sub-area-checkbox');
-    
-    checkboxes.forEach(checkbox => {
-        checkbox.checked = select;
+// NOVA FUNÇÃO: Seleciona/Deseleciona todas as sub-matérias
+function selecionarAreaPrincipal(checkboxPrincipal, areaId) {
+    const subCheckboxes = document.querySelectorAll(.sub-materia-check[data-parent-card=""""]);
+    subCheckboxes.forEach(chk => {
+        chk.checked = checkboxPrincipal.checked;
     });
-    
-    updateAreaState(areaId);
 }
 
 function getIconeArea(areaNome) {
@@ -1034,18 +1055,12 @@ function getIconeArea(areaNome) {
         "Psicologia Clínica e Saúde": "🧠",
         "Gestão de Pessoas": "👥",
         "Informática": "💻",
-        "Atualidades Gerais": "📰",
-        "Matemática": "🔢",
-        "Raciocínio Lógico": "🔢",
-        "Matemática Financeira": "🔢",
-        "Direito Administrativo": "⚖️",
-        "Direito Constitucional": "⚖️",
-        "Psicologia": "🧠",
-        "Psicologia (Saúde)": "🧠",
-        "Psicologia (Gestão)": "👥"
+        "Atualidades Gerais": "📰"
     };
     return icones[areaNome] || "❓";
 }
+
+/* Função selecionarArea() removida (substituída por lógica de card) */
 
 // Inicialização
 document.addEventListener("DOMContentLoaded", function() {
@@ -1057,3 +1072,4 @@ document.addEventListener("DOMContentLoaded", function() {
     carregarConteudoInicial();
     navegarPara("tela-inicio");
 });
+

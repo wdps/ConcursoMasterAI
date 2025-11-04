@@ -1,31 +1,25 @@
-﻿# -*- coding: utf-8 -*-
-import pandas as pd
+﻿import pandas as pd
+from flask import jsonify
+# -*- coding: utf-8 -*-
+import sqlite3
 import json
 import random
 from flask import Flask, render_template, jsonify, request, session
 from collections import defaultdict
-import sqlite3 
 
 app = Flask(__name__)
-app.secret_key = "chave-secreta-concursoia-2024"
-DATABASE = 'database.db' 
-
-# ---
-# --- FONTE DE DADOS PRINCIPAL (PANDAS) ---
-# ---
+# --- Carrega o banco de dados de questões ---
 try:
     df_questoes = pd.read_csv('questoes.csv', sep=';', quotechar='"')
-    df_questoes = df_questoes.fillna('')
-    print(f"INFO: 'questoes.csv' carregado com sucesso. Total: {len(df_questoes)} questões.")
+    print("INFO: 'questoes.csv' carregado com sucesso.")
 except Exception as e:
     print(f"ERRO CRÍTICO: Não foi possível ler 'questoes.csv'. Erro: {e}")
-    df_questoes = pd.DataFrame()
-# --- FIM DA FONTE DE DADOS ---
+    df_questoes = pd.DataFrame() # Cria um dataframe vazio
+# --- FIM ---
 
+app.secret_key = "chave-secreta-concursoia-2024"
+DATABASE = 'database.db'
 
-# ---
-# --- MAPA DE ÁREAS (Usado pela API /api/areas) ---
-# ---
 MAPA_AREAS = {
     "Língua Portuguesa": ["Língua Portuguesa"],
     "Exatas e Raciocínio Lógico": ["Matemática", "Raciocínio Lógico", "Matemática Financeira"],
@@ -37,166 +31,127 @@ MAPA_AREAS = {
     "Atualidades Gerais": ["Atualidades"]
 }
 
-# ---
-# --- Funções do Banco de Dados (SQLite - Para Resultados) ---
-# ---
 def get_db():
     conn = sqlite3.connect(DATABASE)
     conn.row_factory = sqlite3.Row 
     return conn
 
-@app.cli.command('init-db')
 def setup_db():
-    # (O seu código de setup_db() original estava aqui)
-    print("Banco de dados de resultados inicializado (se necessário).")
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS questoes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        disciplina TEXT NOT NULL,
+        materia TEXT NOT NULL,
+        dificuldade TEXT,
+        enunciado TEXT NOT NULL,
+        alternativas TEXT NOT NULL,
+        resposta_correta TEXT NOT NULL,
+        justificativa TEXT,
+        dica TEXT,
+        formula TEXT,
+        banca TEXT
+    );
+    """)
+    
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS resultados (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        data TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        total_questoes INTEGER NOT NULL,
+        total_acertos INTEGER NOT NULL,
+        percentual REAL NOT NULL
+    );
+    """)
+    
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS desempenho_materia (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        resultado_id INTEGER NOT NULL,
+        materia TEXT NOT NULL,
+        acertos INTEGER NOT NULL,
+        total INTEGER NOT NULL,
+        FOREIGN KEY (resultado_id) REFERENCES resultados (id)
+    );
+    """)
+    
+    conn.commit()
+    conn.close()
 
-# ---
-# --- Rota Principal ---
-# ---
 @app.route('/')
 def index():
     return render_template('index.html')
-
-# ---
-# --- API (Backend) para o JavaScript ---
-# ---
-
-# CORRIGIDO: Esta função agora envia os dados AGRUPADOS
-@app.route('/api/areas')
-def get_areas():
-    try:
-        if df_questoes.empty:
-            return jsonify({"success": False, "error": "Banco de questões não carregado"}), 500
-        
-        contagem_disciplinas = df_questoes['disciplina'].value_counts().to_dict()
-        areas_agrupadas = []
-        
-        for area_principal, sub_materias in MAPA_AREAS.items():
-            total_questoes_area = 0
-            sub_materias_existentes = []
-            
-            for sub_materia in sub_materias:
-                if sub_materia in contagem_disciplinas:
-                    total_questoes_area += contagem_disciplinas[sub_materia]
-                    sub_materias_existentes.append(sub_materia)
-            
-            if total_questoes_area > 0 and sub_materias_existentes:
-                areas_agrupadas.append({
-                    "area_principal": area_principal,
-                    "sub_materias": sub_materias_existentes,
-                    "total_questoes": int(total_questoes_area)
-                })
-        
-        print(f"INFO: /api/areas - Encontradas {len(areas_agrupadas)} áreas agrupadas.")
-        return jsonify({"success": True, "areas": areas_agrupadas})
-        
-    except Exception as e:
-        print(f"ERRO em /api/areas: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
-
-# CORRIGIDO: Esta função agora existe e corrige o Erro 404
-@app.route('/api/bancas')
-def get_bancas():
-    try:
-        print("INFO: /api/bancas - Retornando dados falsos (Banca Padrão).")
-        bancas_falsas = [{"banca": "(Banca Padrão)", "total_questoes": len(df_questoes)}]
-        return jsonify({"success": True, "bancas": bancas_falsas}) 
-    except Exception as e:
-        print(f"ERRO em /api/bancas: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
-
-# CORRIGIDO: Esta função agora existe e corrige o Erro 404
-@app.route('/api/dashboard/estatisticas-areas')
-def get_estatisticas_areas():
-    try:
-        if df_questoes.empty:
-            return jsonify({"success": False, "error": "Banco de questões não carregado"}), 500
-
-        stats = df_questoes['disciplina'].value_counts().to_dict()
-        stats_falsas = {
-            "total_simulados_feitos": 0,
-            "media_geral_percentual": 0,
-            "total_acertos_geral": 0,
-            "melhor_desempenho": None,
-            "stats_por_disciplina": stats
-        }
-        
-        print("INFO: /api/dashboard - Estatísticas geradas (simplificadas).")
-        return jsonify({"success": True, "stats_gerais": stats_falsas})
-    except Exception as e:
-        print(f"ERRO em /api/dashboard: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
-
-# ---
-# --- API DO SIMULADO (Corrigida para usar PANDAS) ---
-# ---
 
 @app.route('/api/simulado/iniciar', methods=['POST'])
 def iniciar_simulado():
     try:
         data = request.json
         areas_selecionadas = data.get('areas', [])
-        banca_selecionada = data.get('banca') 
+        banca_selecionada = data.get('banca', '')
         quantidade_str = data.get('quantidade', '10')
 
         if not areas_selecionadas:
             return jsonify({"success": False, "error": "Nenhuma área selecionada."}), 400
 
-        questoes_filtradas = df_questoes[df_questoes['disciplina'].isin(areas_selecionadas)]
-
-        if questoes_filtradas.empty:
-            return jsonify({"success": False, "error": "Nenhuma questão encontrada para as áreas selecionadas."}), 404
-
-        total_encontrado = len(questoes_filtradas)
-        quantidade = int(quantidade_str)
-        if quantidade > total_encontrado:
-            quantidade = total_encontrado
+        disciplinas_para_buscar = []
+        for area_nome in areas_selecionadas:
+            if area_nome in MAPA_AREAS:
+                disciplinas_para_buscar.extend(MAPA_AREAS[area_nome])
         
-        questoes_selecionadas_df = questoes_filtradas.sample(n=quantidade)
+        disciplinas_unicas = list(set(disciplinas_para_buscar))
         
-        questoes_prontas = []
-        ids_na_sessao = []
-        
-        for index, row in questoes_selecionadas_df.iterrows():
-            alternativas_obj = {
-                'a': row.get('alternativa_a'),
-                'b': row.get('alternativa_b'),
-                'c': row.get('alternativa_c'),
-                'd': row.get('alternativa_d'),
-                'e': row.get('alternativa_e')
-            }
-            
-            questao_formatada = {
-                "id": int(index),
-                "disciplina": row.get('disciplina'),
-                "materia": row.get('materia'),
-                "dificuldade": row.get('dificuldade'),
-                "enunciado": row.get('enunciado'),
-                "alternativas": alternativas_obj, 
-                "resposta_correta": row.get('resposta_correta'),
-                "justificativa": row.get('justificativa'),
-                "dica": row.get('dica'),
-                "formula": row.get('formula')
-            }
-            questoes_prontas.append(questao_formatada)
-            ids_na_sessao.append(int(index))
+        if not disciplinas_unicas:
+            return jsonify({"success": False, "error": "Nenhuma disciplina correspondente às áreas selecionadas."}), 400
 
-        session['simulado_ids'] = ids_na_sessao
+        conn = get_db()
+        cursor = conn.cursor()
+        placeholders = ','.join('?' * len(disciplinas_unicas))
+        query_parts = ["SELECT * FROM questoes WHERE disciplina IN ({})".format(placeholders)]
+        query_params = disciplinas_unicas
+        
+        if banca_selecionada and banca_selecionada != 'todas':
+            query_parts.append("AND banca = ?")
+            query_params.append(banca_selecionada)
+        
+        if quantidade_str == "295":
+            query = " ".join(query_parts)
+            cursor.execute(query, query_params)
+            questoes_raw = cursor.fetchall()
+            random.shuffle(questoes_raw)
+        else:
+            limite = int(quantidade_str)
+            query = " ".join(query_parts) + " ORDER BY RANDOM() LIMIT ?"
+            query_params.append(limite)
+            cursor.execute(query, query_params)
+            questoes_raw = cursor.fetchall()
+        
+        conn.close()
+        
+        if not questoes_raw:
+             return jsonify({"success": False, "error": "Nenhuma questão encontrada para os filtros selecionados."}), 404
+
+        questoes = []
+        for q in questoes_raw:
+            questao_dict = dict(q)
+            questao_dict['alternativas'] = json.loads(q['alternativas'])
+            questoes.append(questao_dict)
+
+        session['simulado_ids'] = [q['id'] for q in questoes]
         session['simulado_respostas'] = {} 
         session['indice_atual'] = 0
         
-        primeira_questao = questoes_prontas[0]
+        primeira_questao = questoes[0]
         
         return jsonify({
             "success": True,
-            "total_questoes": len(questoes_prontas),
+            "total_questoes": len(questoes),
             "indice_atual": 0,
             "questao": primeira_questao,
             "resposta_anterior": None
         })
 
     except Exception as e:
-        print(f"ERRO 500 em /api/simulado/iniciar: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/api/simulado/questao/<int:indice>')
@@ -211,29 +166,17 @@ def get_questao(indice):
         session['indice_atual'] = indice
         questao_id = questoes_ids[indice]
         try:
-            row = df_questoes.loc[questao_id]
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM questoes WHERE id = ?", (questao_id,))
+            q_raw = cursor.fetchone()
+            conn.close()
             
-            alternativas_obj = {
-                'a': row.get('alternativa_a'),
-                'b': row.get('alternativa_b'),
-                'c': row.get('alternativa_c'),
-                'd': row.get('alternativa_d'),
-                'e': row.get('alternativa_e')
-            }
+            if not q_raw:
+                return jsonify({"success": False, "error": "Questão não encontrada no DB."}), 404
             
-            questao_atual = {
-                "id": int(questao_id),
-                "disciplina": row.get('disciplina'),
-                "materia": row.get('materia'),
-                "dificuldade": row.get('dificuldade'),
-                "enunciado": row.get('enunciado'),
-                "alternativas": alternativas_obj,
-                "resposta_correta": row.get('resposta_correta'),
-                "justificativa": row.get('justificativa'),
-                "dica": row.get('dica'),
-                "formula": row.get('formula')
-            }
-            
+            questao_atual = dict(q_raw)
+            questao_atual['alternativas'] = json.loads(q_raw['alternativas'])
             resposta_anterior = session.get('simulado_respostas', {}).get(str(questao_atual['id']))
             
             return jsonify({
@@ -251,18 +194,30 @@ def get_questao(indice):
 @app.route('/api/simulado/responder', methods=['POST'])
 def responder_questao():
     data = request.json
-    questao_id = str(data.get('questao_id'))
+    questao_id = str(data.get('questao_id')) 
     alternativa_escolhida = data.get('alternativa', '').lower()
     
+    questoes_ids = session.get('simulado_ids')
     respostas = session.get('simulado_respostas', {})
 
+    if not questoes_ids:
+        return jsonify({"success": False, "error": "Simulado não encontrado."}), 404
+        
     if questao_id in respostas:
         return jsonify({"success": False, "error": "Esta questão já foi respondida."}), 400
 
     try:
-        row = df_questoes.loc[int(questao_id)]
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM questoes WHERE id = ?", (int(questao_id),))
+        q_raw = cursor.fetchone()
+        conn.close()
+        
+        if not q_raw:
+             return jsonify({"success": False, "error": "ID da questão não encontrado no DB."}), 404
              
-        resposta_certa = row.get('resposta_correta', '').lower()
+        questao_correta = dict(q_raw)
+        resposta_certa = questao_correta['resposta_correta'].lower()
         acertou = (alternativa_escolhida == resposta_certa)
 
         respostas[questao_id] = {
@@ -275,7 +230,7 @@ def responder_questao():
             "success": True,
             "acertou": acertou,
             "resposta_correta": resposta_certa.upper(),
-            "justificativa": row.get('justificativa', 'Sem justificativa detalhada.')
+            "justificativa": questao_correta.get('justificativa', 'Sem justificativa detalhada.')
         })
     except Exception as e:
         return jsonify({"success": False, "error": f"Erro ao verificar resposta: {e}"}), 500
@@ -290,18 +245,51 @@ def finalizar_simulado():
 
     total_questoes = len(questoes_ids)
     total_acertos = 0
+    desempenho_por_materia = defaultdict(lambda: {'acertos': 0, 'total': 0})
 
     try:
-        for questao_id in questoes_ids:
-            resposta = respostas.get(str(questao_id))
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        placeholders = ','.join('?' * len(questoes_ids))
+        query = "SELECT id, materia FROM questoes WHERE id IN ({})".format(placeholders)
+        
+        id_map = {id_val: i for i, id_val in enumerate(questoes_ids)}
+        ordered_params = sorted(questoes_ids, key=lambda x: id_map[x])
+        
+        cursor.execute(query, ordered_params)
+        questoes_raw = cursor.fetchall()
+        questoes = [dict(q) for q in questoes_raw]
+
+        for q in questoes:
+            materia = q['materia']
+            desempenho_por_materia[materia]['total'] += 1
+            
+            resposta = respostas.get(str(q['id']))
             if resposta and resposta['acertou']:
                 total_acertos += 1
-        
+                desempenho_por_materia[materia]['acertos'] += 1
+
         percentual_acerto = round((total_acertos / total_questoes) * 100, 2) if total_questoes > 0 else 0
+
+        cursor.execute("INSERT INTO resultados (total_questoes, total_acertos, percentual) VALUES (?, ?, ?)", 
+                       (total_questoes, total_acertos, percentual_acerto))
+        
+        resultado_id = cursor.lastrowid
+
+        for materia, stats in desempenho_por_materia.items():
+            cursor.execute("INSERT INTO desempenho_materia (resultado_id, materia, acertos, total) VALUES (?, ?, ?, ?)",
+                           (resultado_id, materia, stats['acertos'], stats['total']))
+
+        conn.commit()
+        conn.close()
         
     except Exception as e:
         print(f"Erro ao salvar resultado: {e}")
-        return jsonify({"success": False, "error": f"Erro ao salvar dados: {e}"}), 500
+        session.pop('simulado_ids', None)
+        session.pop('simulado_respostas', None)
+        session.pop('indice_atual', None)
+        return jsonify({"success": False, "error": f"Erro ao salvar dados no banco: {e}"}), 500
 
     session.pop('simulado_ids', None)
     session.pop('simulado_respostas', None)
@@ -317,9 +305,6 @@ def finalizar_simulado():
         }
     })
 
-# ---
-# --- API DA REDAÇÃO (Atualizada com 180 temas) ---
-# ---
 @app.route('/api/redacao/temas')
 def get_temas_redacao():
     temas = [
@@ -422,87 +407,7 @@ def get_temas_redacao():
         {"id": 97, "titulo": "Desafios do combate ao assédio moral"},
         {"id": 98, "titulo": "Impactos da moda sustentável"},
         {"id": 99, "titulo": "Desafios da educação para relações étnico-raciais"},
-        {"id": 100, "titulo": "Importância da filosofia na formação cidadã"},
-        {"id": 101, "titulo": "A persistência da violência contra a mulher na sociedade brasileira"},
-        {"id": 102, "titulo": "Desmatamento na Amazônia: causas, consequências e soluções"},
-        {"id": 103, "titulo": "O papel da tecnologia na democratização do ensino"},
-        {"id": 104, "titulo": "Reforma agrária e os conflitos de terra no Brasil"},
-        {"id": 105, "titulo": "A crise do sistema carcerário brasileiro e a ressocialização"},
-        {"id": 106, "titulo": "Impacto das redes sociais na saúde mental dos jovens"},
-        {"id": 107, "titulo": "A questão dos refugiados e a xenofobia no século XXI"},
-        {"id": 108, "titulo": "O desafio de combater a fome e a insegurança alimentar no Brasil"},
-        {"id": 109, "titulo": "Adoção de crianças e adolescentes no Brasil: desafios e burocracia"},
-        {"id": 110, "titulo": "A importância da representatividade negra na mídia"},
-        {"id": 111, "titulo": "Exploração do trabalho infantil: um problema social persistente"},
-        {"id": 112, "titulo": "Os desafios da implementação de energias renováveis no Brasil"},
-        {"id": 113, "titulo": "O combate ao analfabetismo funcional no Brasil"},
-        {"id": 114, "titulo": "Privatização de empresas estatais: prós e contras"},
-        {"id": 115, "titulo": "O papel do SUS na pandemia de COVID-19"},
-        {"id": 116, "titulo": "A gravidez na adolescência como um problema de saúde pública"},
-        {"id": 117, "titulo": "O futuro do trabalho: home office e modelos híbridos"},
-        {"id": 118, "titulo": "Adoção de animais e o problema do abandono"},
-        {"id": 119, "titulo": "A importância da educação financeira desde a infância"},
-        {"id": 120, "titulo": "Os desafios da inclusão de autistas na sociedade"},
-        {"id": 121, "titulo": "Combate à homofobia e transfobia no Brasil"},
-        {"id": 122, "titulo": "Impactos do turismo predatório no meio ambiente"},
-        {"id": 123, "titulo": "A valorização do professor como chave para a educação"},
-        {"id": 124, "titulo": "Gentrificação: a expulsão dos pobres dos centros urbanos"},
-        {"id": 125, "titulo": "A cultura do consumismo e seus impactos ambientais e sociais"},
-        {"id": 126, "titulo": "O problema do lixo eletrônico na sociedade moderna"},
-        {"id": 127, "titulo": "Os limites éticos da inteligência artificial"},
-        {"id": 128, "titulo": "A importância do voto consciente para a democracia"},
-        {"id": 129, "titulo": "Desafios do combate à pirataria digital"},
-        {"id": 130, "titulo": "A questão da obesidade infantil no Brasil"},
-        {"id": 131, "titulo": "O papel da arte urbana na revitalização das cidades"},
-        {"id": 132, "titulo": "Acesso à água potável como direito humano universal"},
-        {"id": 133, "titulo": "Os desafios da preservação dos biomas brasileiros além da Amazônia"},
-        {"id": 134, "titulo": "A importância do jornalismo profissional na era das fake news"},
-        {"id": 135, "titulo": "Adoção tardia: desafios e recompensas"},
-        {"id": 136, "titulo": "A influência da publicidade infantil no consumismo"},
-        {"id": 137, "titulo": "Os desafios da saúde mental no pós-pandemia"},
-        {"id": 138, "titulo": "O combate ao etarismo (preconceito contra idosos) no mercado de trabalho"},
-        {"id": 139, "titulo": "Desafios da infraestrutura de transportes no Brasil"},
-        {"id": 140, "titulo": "A importância da participação popular nas decisões políticas"},
-        {"id": 141, "titulo": "O problema da superlotação no transporte público"},
-        {"id": 142, "titulo": "O papel da agricultura familiar na segurança alimentar"},
-        {"id": 143, "titulo": "O impacto dos influenciadores digitais na formação de opinião"},
-        {"id": 144, "titulo": "A necessidade de valorização das culturas indígenas"},
-        {"id": 145, "titulo": "O vício em jogos eletrônicos: um problema de saúde pública?"},
-        {"id": 146, "titulo": "Os desafios do E-commerce e os direitos do consumidor"},
-        {"id": 147, "titulo": "A importância da economia criativa para o desenvolvimento"},
-        {"id": 148, "titulo": "A questão da população em situação de rua nos centros urbanos"},
-        {"id": 149, "titulo": "Os desafios da proteção de dados na era digital (LGPD)"},
-        {"id": 150, "titulo": "A importância da filantropia e do voluntariado no Brasil"},
-        {"id": 151, "titulo": "O combate à evasão fiscal e a justiça social"},
-        {"id": 152, "titulo": "A relação entre saneamento básico e saúde pública"},
-        {"id": 153, "titulo": "Desafios da transição para uma economia de baixo carbono"},
-        {"id": 154, "titulo": "A importância do sono para a saúde física e mental"},
-        {"id": 155, "titulo": "Os impactos do uso excessivo de smartphones nas relações sociais"},
-        {"id": 156, "titulo": "A valorização do patrimônio histórico-cultural brasileiro"},
-        {"id": 157, "titulo": "A questão da liberdade de expressão e seus limites"},
-        {"id": 158, "titulo": "O papel da mulher no mercado de trabalho e a dupla jornada"},
-        {"id": 159, "titulo": "A importância do incentivo à leitura na infância"},
-        {"id": 160, "titulo": "Os desafios da reciclagem de plástico no mundo"},
-        {"id": 161, "titulo": "O combate ao racismo estrutural nas instituições"},
-        {"id": 162, "titulo": "A importância da pesquisa científica para a soberania nacional"},
-        {"id": 163, "titulo": "O impacto da poluição do ar na saúde pública"},
-        {"id": 164, "titulo": "A necessidade de humanização no atendimento médico"},
-        {"id": 165, "titulo": "Os desafios da educação inclusiva para alunos com deficiência"},
-        {"id": 166, "titulo": "A questão do endividamento das famílias brasileiras"},
-        {"id": 167, "titulo": "O papel da mídia na construção de padrões de beleza"},
-        {"id": 168, "titulo": "A importância da preservação das abelhas para o ecossistema"},
-        {"id": 169, "titulo": "O combate ao tráfico de animais silvestres"},
-        {"id": 170, "titulo": "Desafios da regulamentação do trabalho por aplicativos"},
-        {"id": 171, "titulo": "A importância da bioeconomia para a Amazônia"},
-        {"id": 172, "titulo": "O problema da dependência química como questão de saúde"},
-        {"id": 173, "titulo": "A importância da planejamento urbano para cidades sustentáveis"},
-        {"id": 174, "titulo": "O papel da escola no combate ao bullying"},
-        {"id": 175, "titulo": "A importância da diplomacia na resolução de conflitos internacionais"},
-        {"id": 176, "titulo": "O desafio da reintegração de ex-detentos na sociedade"},
-        {"id": 177, "titulo": "A importância do envelhecimento ativo para a qualidade de vida"},
-        {"id": 178, "titulo": "O combate à pirataria e a propriedade intelectual"},
-        {"id": 179, "titulo": "Os impactos da 'fuga de cérebros' para o Brasil"}, # <- CORRIGIDO
-        {"id": 180, "titulo": "A importância da representatividade política feminina"}
+        {"id": 100, "titulo": "Importância da filosofia na formação cidadã"}
     ]
     return jsonify({"success": True, "temas": temas})
 
@@ -517,6 +422,7 @@ def corrigir_gemini():
 
     try:
         nota_simulada = random.randint(60, 95) 
+        
         correcao_data = {
             "nota_final": nota_simulada,
             "analise_competencias": [
@@ -531,9 +437,54 @@ def corrigir_gemini():
             "sugestoes_melhoria": ["Ampliar o repertório de citações", "Desenvolver mais os exemplos"],
             "dicas_concursos": ["Mantenha a estrutura dissertativa", "Use conectivos variados", "Revise a concordância verbal"]
         }
+        
         return jsonify({"success": True, "correcao": correcao_data})
         
     except Exception as e:
         return jsonify({"success": False, "error": f"Erro ao processar correção: {e}"}), 500
+@app.route('/api/areas')
+def get_areas():
+    try:
+        if df_questoes.empty:
+            print("ERRO em /api/areas: df_questoes está vazio.")
+            return jsonify({"success": False, "error": "Banco de questões não carregado"}), 500
+        
+        # O script.js (Frontend) espera objetos com 'nome_area' e 'total_questoes'.
+        # Vamos contar as questões por 'disciplina' (que é a 'area').
+        contagem_areas = df_questoes['disciplina'].value_counts()
+        
+        # Formatar a saída como o script.js espera
+        areas_formatado = []
+        for area_nome, total in contagem_areas.items():
+            if pd.notna(area_nome):
+                areas_formatado.append({
+                    "nome_area": area_nome,
+                    "total_questoes": int(total) # Garante que é um número
+                })
+        
+        print(f"INFO: /api/areas - Encontradas {len(areas_formatado)} áreas com contagem.")
+        # O script.js espera um objeto com uma chave 'areas'
+        return jsonify({"success": True, "areas": areas_formatado})
+        
+    except Exception as e:
+        print(f"ERRO em /api/areas: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500@app.route('/api/bancas')
+def get_bancas():
+    try:
+        print("INFO: /api/bancas - Retornando dados falsos (Banca Padrão).")
+        bancas_falsas = ["(Banca Padrão)"]
+        return jsonify(bancas_falsas) 
+    except Exception as e:
+        print(f"ERRO em /api/bancas: {e}")
+        return jsonify({"error": str(e)}), 500
+@app.route('/api/dashboard/estatisticas-areas')
+def get_estatisticas_areas():
+    try:
+        if df_questoes.empty: return jsonify({"error": "Banco de questões não carregado"}), 500
+        stats = df_questoes['disciplina'].value_counts().to_dict()
+        print("INFO: /api/dashboard - Estatísticas geradas.")
+        return jsonify(stats)
+    except Exception as e:
+        print(f"ERRO em /api/dashboard: {e}")
+        return jsonify({"error": str(e)}), 500
 
-# --- FIM DO ARQUIVO ---

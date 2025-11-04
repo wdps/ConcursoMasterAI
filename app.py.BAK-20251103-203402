@@ -4,55 +4,26 @@ import json
 import random
 from flask import Flask, render_template, jsonify, request, session
 from collections import defaultdict
-import sqlite3 
 
 app = Flask(__name__)
 app.secret_key = "chave-secreta-concursoia-2024"
-DATABASE = 'database.db' 
 
 # ---
 # --- FONTE DE DADOS PRINCIPAL (PANDAS) ---
 # ---
 try:
+    # Carrega o banco de dados de questões a partir do CSV
     df_questoes = pd.read_csv('questoes.csv', sep=';', quotechar='"')
+    # Preenche valores NaN (vazios) com strings vazias para evitar erros
     df_questoes = df_questoes.fillna('')
     print(f"INFO: 'questoes.csv' carregado com sucesso. Total: {len(df_questoes)} questões.")
 except Exception as e:
     print(f"ERRO CRÍTICO: Não foi possível ler 'questoes.csv'. Erro: {e}")
-    df_questoes = pd.DataFrame()
+    df_questoes = pd.DataFrame() # Cria um dataframe vazio
 # --- FIM DA FONTE DE DADOS ---
 
 
-# ---
-# --- MAPA DE ÁREAS (Usado pela API /api/areas) ---
-# ---
-MAPA_AREAS = {
-    "Língua Portuguesa": ["Língua Portuguesa"],
-    "Exatas e Raciocínio Lógico": ["Matemática", "Raciocínio Lógico", "Matemática Financeira"],
-    "Conhecimentos Jurídicos": ["Direito Administrativo", "Direito Constitucional"],
-    "Conhecimentos Bancários e Vendas": ["Conhecimentos Bancários", "Vendas e Negociação", "Atualidades do Mercado Financeiro"],
-    "Psicologia Clínica e Saúde": ["Psicologia", "Psicologia (Saúde)"],
-    "Gestão de Pessoas": ["Psicologia (Gestão)"],
-    "Informática": ["Informática"],
-    "Atualidades Gerais": ["Atualidades"]
-}
-
-# ---
-# --- Funções do Banco de Dados (SQLite - Para Resultados) ---
-# ---
-def get_db():
-    conn = sqlite3.connect(DATABASE)
-    conn.row_factory = sqlite3.Row 
-    return conn
-
-@app.cli.command('init-db')
-def setup_db():
-    # (O seu código de setup_db() original estava aqui)
-    print("Banco de dados de resultados inicializado (se necessário).")
-
-# ---
 # --- Rota Principal ---
-# ---
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -61,16 +32,21 @@ def index():
 # --- API (Backend) para o JavaScript ---
 # ---
 
-# CORRIGIDO: Esta função agora envia os dados AGRUPADOS
+# CORRIGIDO: Esta função agora formata os dados como o script.js espera
 @app.route('/api/areas')
 def get_areas():
     try:
         if df_questoes.empty:
             return jsonify({"success": False, "error": "Banco de questões não carregado"}), 500
         
+        # O script.js (Frontend) agora espera dados agrupados pelo MAPA_AREAS
+        
+        # 1. Contar todas as questões por 'disciplina' (matéria específica)
         contagem_disciplinas = df_questoes['disciplina'].value_counts().to_dict()
+        
         areas_agrupadas = []
         
+        # 2. Iterar sobre o MAPA_AREAS (que está no topo do app.py)
         for area_principal, sub_materias in MAPA_AREAS.items():
             total_questoes_area = 0
             sub_materias_existentes = []
@@ -92,12 +68,11 @@ def get_areas():
         
     except Exception as e:
         print(f"ERRO em /api/areas: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
-
-# CORRIGIDO: Esta função agora existe e corrige o Erro 404
-@app.route('/api/bancas')
+        return jsonify({"success": False, "error": str(e)}), 500@app.route('/api/bancas')
 def get_bancas():
     try:
+        # O script.js espera um objeto com uma chave 'bancas'
+        # Enviamos dados falsos porque o CSV não tem esta coluna
         print("INFO: /api/bancas - Retornando dados falsos (Banca Padrão).")
         bancas_falsas = [{"banca": "(Banca Padrão)", "total_questoes": len(df_questoes)}]
         return jsonify({"success": True, "bancas": bancas_falsas}) 
@@ -112,7 +87,11 @@ def get_estatisticas_areas():
         if df_questoes.empty:
             return jsonify({"success": False, "error": "Banco de questões não carregado"}), 500
 
+        # Esta é uma simulação. O script.js espera um formato complexo.
+        # Por enquanto, vamos enviar a contagem de disciplinas para corrigir o Erro 404
         stats = df_questoes['disciplina'].value_counts().to_dict()
+        
+        # O script.js espera um objeto com uma chave 'stats_gerais'
         stats_falsas = {
             "total_simulados_feitos": 0,
             "media_geral_percentual": 0,
@@ -131,33 +110,39 @@ def get_estatisticas_areas():
 # --- API DO SIMULADO (Corrigida para usar PANDAS) ---
 # ---
 
+# CORRIGIDO: Esta função agora usa PANDAS e não falha com a banca
 @app.route('/api/simulado/iniciar', methods=['POST'])
 def iniciar_simulado():
     try:
         data = request.json
         areas_selecionadas = data.get('areas', [])
-        banca_selecionada = data.get('banca') 
+        banca_selecionada = data.get('banca')
         quantidade_str = data.get('quantidade', '10')
 
         if not areas_selecionadas:
             return jsonify({"success": False, "error": "Nenhuma área selecionada."}), 400
 
+        # 1. Filtra o DataFrame 'df_questoes' pelas disciplinas (áreas)
         questoes_filtradas = df_questoes[df_questoes['disciplina'].isin(areas_selecionadas)]
 
         if questoes_filtradas.empty:
             return jsonify({"success": False, "error": "Nenhuma questão encontrada para as áreas selecionadas."}), 404
 
+        # 2. Seleciona a quantidade
         total_encontrado = len(questoes_filtradas)
         quantidade = int(quantidade_str)
         if quantidade > total_encontrado:
             quantidade = total_encontrado
         
+        # 3. Seleciona as questões aleatoriamente
         questoes_selecionadas_df = questoes_filtradas.sample(n=quantidade)
         
+        # 4. Converte para o formato JSON e armazena IDs na sessão
         questoes_prontas = []
         ids_na_sessao = []
         
         for index, row in questoes_selecionadas_df.iterrows():
+            # O script.js espera um objeto 'alternativas' aninhado
             alternativas_obj = {
                 'a': row.get('alternativa_a'),
                 'b': row.get('alternativa_b'),
@@ -167,12 +152,12 @@ def iniciar_simulado():
             }
             
             questao_formatada = {
-                "id": int(index),
+                "id": int(index), # Usando o índice do DataFrame como ID
                 "disciplina": row.get('disciplina'),
                 "materia": row.get('materia'),
                 "dificuldade": row.get('dificuldade'),
                 "enunciado": row.get('enunciado'),
-                "alternativas": alternativas_obj, 
+                "alternativas": alternativas_obj, # <--- CORRIGIDO
                 "resposta_correta": row.get('resposta_correta'),
                 "justificativa": row.get('justificativa'),
                 "dica": row.get('dica'),
@@ -181,6 +166,7 @@ def iniciar_simulado():
             questoes_prontas.append(questao_formatada)
             ids_na_sessao.append(int(index))
 
+        # Armazena na sessão
         session['simulado_ids'] = ids_na_sessao
         session['simulado_respostas'] = {} 
         session['indice_atual'] = 0
@@ -211,6 +197,7 @@ def get_questao(indice):
         session['indice_atual'] = indice
         questao_id = questoes_ids[indice]
         try:
+            # Busca a questão no DataFrame
             row = df_questoes.loc[questao_id]
             
             alternativas_obj = {
@@ -227,7 +214,7 @@ def get_questao(indice):
                 "materia": row.get('materia'),
                 "dificuldade": row.get('dificuldade'),
                 "enunciado": row.get('enunciado'),
-                "alternativas": alternativas_obj,
+                "alternativas": alternativas_obj, # <--- CORRIGIDO
                 "resposta_correta": row.get('resposta_correta'),
                 "justificativa": row.get('justificativa'),
                 "dica": row.get('dica'),
@@ -260,6 +247,7 @@ def responder_questao():
         return jsonify({"success": False, "error": "Esta questão já foi respondida."}), 400
 
     try:
+        # Busca a questão no DataFrame
         row = df_questoes.loc[int(questao_id)]
              
         resposta_certa = row.get('resposta_correta', '').lower()
@@ -292,6 +280,9 @@ def finalizar_simulado():
     total_acertos = 0
 
     try:
+        # Busca as questões respondidas no DataFrame
+        questoes_respondidas_df = df_questoes.loc[questoes_ids]
+
         for questao_id in questoes_ids:
             resposta = respostas.get(str(questao_id))
             if resposta and resposta['acertou']:
@@ -318,11 +309,12 @@ def finalizar_simulado():
     })
 
 # ---
-# --- API DA REDAÇÃO (Atualizada com 180 temas) ---
+# --- API DA REDAÇÃO (Mantida como estava) ---
 # ---
 @app.route('/api/redacao/temas')
 def get_temas_redacao():
     temas = [
+        # Temas Antigos
         {"id": 1, "titulo": "Os desafios da educação pública brasileira no século XXI"},
         {"id": 2, "titulo": "Impactos da inteligência artificial no mercado de trabalho"},
         {"id": 3, "titulo": "Crise hídrica e gestão sustentável dos recursos naturais"},
@@ -423,6 +415,7 @@ def get_temas_redacao():
         {"id": 98, "titulo": "Impactos da moda sustentável"},
         {"id": 99, "titulo": "Desafios da educação para relações étnico-raciais"},
         {"id": 100, "titulo": "Importância da filosofia na formação cidadã"},
+        # --- 80 NOVOS TEMAS ---
         {"id": 101, "titulo": "A persistência da violência contra a mulher na sociedade brasileira"},
         {"id": 102, "titulo": "Desmatamento na Amazônia: causas, consequências e soluções"},
         {"id": 103, "titulo": "O papel da tecnologia na democratização do ensino"},
@@ -495,17 +488,16 @@ def get_temas_redacao():
         {"id": 170, "titulo": "Desafios da regulamentação do trabalho por aplicativos"},
         {"id": 171, "titulo": "A importância da bioeconomia para a Amazônia"},
         {"id": 172, "titulo": "O problema da dependência química como questão de saúde"},
-        {"id": 173, "titulo": "A importância da planejamento urbano para cidades sustentáveis"},
+        {"id": 173, "titulo": "A importância do planejamento urbano para cidades sustentáveis"},
         {"id": 174, "titulo": "O papel da escola no combate ao bullying"},
         {"id": 175, "titulo": "A importância da diplomacia na resolução de conflitos internacionais"},
         {"id": 176, "titulo": "O desafio da reintegração de ex-detentos na sociedade"},
         {"id": 177, "titulo": "A importância do envelhecimento ativo para a qualidade de vida"},
         {"id": 178, "titulo": "O combate à pirataria e a propriedade intelectual"},
-        {"id": 179, "titulo": "Os impactos da 'fuga de cérebros' para o Brasil"}, # <- CORRIGIDO
+        {"id": 179, "titulo": "Os impactos da "fuga de cérebros" para o Brasil"},
         {"id": 180, "titulo": "A importância da representatividade política feminina"}
     ]
     return jsonify({"success": True, "temas": temas})
-
 @app.route('/api/redacao/corrigir-gemini', methods=['POST'])
 def corrigir_gemini():
     data = request.json
