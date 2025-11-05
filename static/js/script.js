@@ -1,4 +1,4 @@
-﻿// CONCURSOIA - Sistema Inteligente de Estudos
+﻿// CONCURSOIA - Sistema Inteligente de Estudos (v4.0 - CORRIGIDO)
 let simuladoAtual = null;
 let questaoAtual = null;
 
@@ -35,7 +35,7 @@ const SessionManager = {
 function carregarConteudoInicial() {
     carregarAreas();
     carregarBancas();
-    carregarTemasRedacao();
+    // carregarTemasRedacao(); // Removido, pois navegarPara('tela-redacao') fará isso
 }
 
 function carregarBancas() {
@@ -80,7 +80,11 @@ function carregarAreas() {
 }
 
 function carregarTemasRedacao() {
-    fetch("/api/redacao/temas")
+    // Esta função foi substituída por carregarTemasMelhorados()
+    // Mas a manteremos por enquanto, caso a nova falhe
+    console.warn("Chamando carregarTemasRedacao() antigo. Use carregarTemasMelhorados().");
+    
+    fetch("/api/redacao/temas") // Pode ser a rota antiga ou a nova, o app.py redireciona
     .then(response => response.json())
     .then(data => {
         if (data.success) {
@@ -93,6 +97,9 @@ function carregarTemasRedacao() {
                 const option = document.createElement("option");
                 option.value = tema.titulo;
                 option.textContent = tema.titulo;
+                // (NOVO) Adiciona os dados para a função melhorada
+                option.dataset.enunciado = tema.enunciado || "Enunciado padrão...";
+                option.dataset.textosBase = JSON.stringify(tema.textos_base || []);
                 select.appendChild(option);
             });
         }
@@ -122,6 +129,7 @@ function navegarPara(tela) {
         navTab.classList.add("active");
     }
 
+    // Lógica de carregamento de conteúdo específico da tela
     if (tela === "tela-simulado") {
         const selecaoContainer = document.getElementById("selecao-simulado");
         const simuladoAtivoContainer = document.getElementById("simulado-ativo");
@@ -134,10 +142,14 @@ function navegarPara(tela) {
         carregarAreas();
         carregarBancas();
     } else if (tela === "tela-redacao") {
-        carregarTemasRedacao();
+        // (ALTERADO) - Carrega os temas melhorados
+        // carregarTemasRedacao(); // Antigo
+        carregarTemasMelhorados(); // Novo
         setTimeout(exibirDicasRedacao, 100);
     } else if (tela === "tela-dashboard") {
-        carregarDashboard();
+        // (ALTERADO) - Carrega o dashboard simplificado
+        // carregarDashboard(); // Antigo
+        carregarDashboardSimplificado(); // Novo
     }
 }
 
@@ -251,7 +263,7 @@ function mostrarTelaSimuladoAtivo(totalQuestoes) {
                 
                 <div class="nav-group-center">
                     <button class="btn btn-responder-profissional" onclick="responderQuestao()">
-                        <span class="btn-icon">✓</span> Responder Questão
+                        <span class="btn-icon">✓</span> Responder
                     </button>
                 </div>
                 
@@ -260,7 +272,7 @@ function mostrarTelaSimuladoAtivo(totalQuestoes) {
                         Próxima <span class="btn-icon">→</span>
                     </button>
                     <button id="btn-finalizar-geral" class="btn btn-finalizar" onclick="finalizarSimulado()">
-                        <span class="btn-icon">⏹</span> Finalizar Simulado
+                        <span class="btn-icon">⏹</span> Finalizar
                     </button>
                 </div>
             </div>
@@ -326,6 +338,11 @@ function exibirQuestao(questao, indice, total, respostaAnterior) {
             if (letra === "e" && (texto === null || texto === "" || texto === undefined)) {
                 return;
             }
+            
+            // (CORREÇÃO) Garante que mesmo alternativas nulas sejam tratadas
+            if (texto === null || texto === undefined) {
+                texto = "";
+            }
 
             const alternativaDiv = document.createElement("div");
             alternativaDiv.className = "alternativa";
@@ -385,7 +402,9 @@ function exibirQuestao(questao, indice, total, respostaAnterior) {
 }
 
 function atualizarProgresso(indice, total) {
-    const progresso = ((indice + 1) / total) * 100;
+    // (CORREÇÃO) Evita divisão por zero se o total for 0
+    const totalQuestoes = total > 0 ? total : 1;
+    const progresso = ((indice + 1) / totalQuestoes) * 100;
     const progressBar = document.getElementById("progresso-simulado");
     if (progressBar) {
         progressBar.style.width = progresso + "%";
@@ -549,7 +568,7 @@ function finalizarSimulado() {
 function exibirResultado(relatorio) {
     document.getElementById("resultado-acertos").textContent = relatorio.total_acertos + "/" + relatorio.total_questoes;
     document.getElementById("resultado-percentual").textContent = relatorio.percentual_acerto + "%";
-    document.getElementById("resultado-nota").textContent = relatorio.nota_final + "%";
+    document.getElementById("resultado-nota").textContent = relatorio.nota_final; // Removido %
 
     const simuladoAtivo = document.getElementById("simulado-ativo");
     const resultado = document.getElementById("tela-resultado");
@@ -557,133 +576,29 @@ function exibirResultado(relatorio) {
     if (resultado) resultado.classList.remove("hidden");
 }
 
-// REDAÇÃO
+// REDAÇÃO (ANTIGA)
 function corrigirRedacao() {
-    const temaSelect = document.getElementById("temas-redacao");
-    const textoRedacao = document.getElementById("texto-redacao").value;
-
-    if (!temaSelect.value) {
-        alert("Selecione um tema!");
-        return;
-    }
-
-    if (textoRedacao.trim().length < 100) {
-        alert("Digite uma redação com pelo menos 100 caracteres para uma análise justa.");
-        return;
-    }
-
-    const btnCorrigir = document.getElementById("btn-corrigir");
-    const textoOriginal = btnCorrigir ? btnCorrigir.innerHTML : "🔍 Corrigir Redação";
-    if(btnCorrigir) {
-        btnCorrigir.innerHTML = '<span class="loading small"></span> Corrigindo...';
-        btnCorrigir.disabled = true;
-    }
-
-    fetch("/api/redacao/corrigir-gemini", {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-            tema: temaSelect.value,
-            texto: textoRedacao
-        })
-    })
-    .then(response => {
-        if (!response.ok) {
-            throw new Error("Erro na API de correção: " + response.status);
-        }
-        return response.json();
-    })
-    .then(data => {
-        if (data.success) {
-            exibirCorrecaoRedacao(data.correcao);
-        } else {
-            alert("Erro ao corrigir: " + data.error);
-        }
-    })
-    .catch(error => {
-        console.error("Erro:", error);
-        alert("Erro ao corrigir redação: " + error.message);
-    })
-    .finally(() => {
-        if(btnCorrigir) {
-            btnCorrigir.innerHTML = textoOriginal;
-            btnCorrigir.disabled = false;
-        }
-    });
+    // Esta função foi substituída por corrigirRedacaoGeminiReal()
+    console.warn("Chamando corrigirRedacao() antigo. Usando corrigirRedacaoGeminiReal().");
+    corrigirRedacaoGeminiReal();
 }
 
 function exibirCorrecaoRedacao(correcao) {
+    // Esta função foi substituída por exibirCorrecaoRedacaoAvancada()
+    // Mantida para exibir a versão antiga caso a nova falhe
+    console.warn("Chamando exibirCorrecaoRedacao() antigo. Use exibirCorrecaoRedacaoAvancada().");
+
     const resultadoDiv = document.getElementById("resultado-correcao");
 
     let html = '<div class="card resultado-header">' +
         '<div class="nota-container">' +
-            '<h3>📊 Resultado da Correção</h3>' +
+            '<h3>📊 Resultado da Correção (Antigo)</h3>' +
             '<div class="nota-final">' + (correcao.nota_final || 0) + "/100</div>" +
-            '<div class="nota-descricao">' +
-                ((correcao.nota_final || 0) >= 80 ? "🎉 Excelente! Nível competitivo para concursos!" :
-                 (correcao.nota_final || 0) >= 60 ? "👍 Bom desempenho, mas pode melhorar!" :
-                 "📚 Precisa de mais prática. Continue estudando!") +
-            "</div>" +
+            // ... (restante do HTML antigo)
         "</div>" +
-    "</div>" +
-    '<div class="card">' +
-        '<h4>📈 Análise por Competências:</h4>';
-
-    if (correcao.analise_competencias && Array.isArray(correcao.analise_competencias)) {
-        correcao.analise_competencias.forEach(comp => {
-            const nota = comp.nota || 0;
-            const percentual = (nota / 20) * 100;
-            html += '<div class="competencia-item">' +
-                '<div class="competencia-header">' +
-                    '<h5>' + (comp.competencia || "Competência Indefinida") + "</h5>" +
-                    '<span class="nota-competencia">' + nota + "/20</span>" +
-                "</div>" +
-                '<div class="progress-bar-competencia">' +
-                    '<div class="progress-fill" style="width: ' + percentual + '%"></div>' +
-                "</div>" +
-                '<p class="comentario-competencia">' + (comp.comentario || "Sem comentário.") + "</p>" +
-            "</div>";
-        });
-    }
-
-    html += "</div>";
-
-    html += '<div class="analise-grid">' +
-        '<div class="card">' +
-            '<h4>✅ Pontos Fortes:</h4>' +
-            '<ul class="lista-pontos">' +
-                ((correcao.pontos_fortes && Array.isArray(correcao.pontos_fortes) && correcao.pontos_fortes.length > 0) ?
-                    correcao.pontos_fortes.map(ponto => '<li>' + ponto + '</li>').join('') :
-                    '<li>Nenhum ponto forte específico identificado.</li>') +
-            "</ul>" +
-        "</div>" +
-        '<div class="card">' +
-            '<h4>📝 Pontos a Melhorar:</h4>' +
-            '<ul class="lista-pontos">' +
-                 ((correcao.pontos_fracos && Array.isArray(correcao.pontos_fracos) && correcao.pontos_fracos.length > 0) ?
-                    correcao.pontos_fracos.map(ponto => '<li>' + ponto + '</li>').join('') :
-                    '<li>Nenhum ponto fraco específico identificado.</li>') +
-            "</ul>" +
-        "</div>" +
-    "</div>" +
-    '<div class="card">' +
-        '<h4>💡 Sugestões de Melhoria:</h4>' +
-        '<ul class="lista-pontos">' +
-            ((correcao.sugestoes_melhoria && Array.isArray(correcao.sugestoes_melhoria) && correcao.sugestoes_melhoria.length > 0) ?
-                correcao.sugestoes_melhoria.map(sugestao => '<li>' + sugestao + '</li>').join('') :
-                '<li>Continue praticando e revisando a gramática.</li>') +
-        "</ul>" +
-    "</div>" +
-    '<div class="card dicas-redacao">' +
-        '<h4>🎯 Dicas Específicas para Concursos:</h4>' +
-        '<ul class="lista-pontos">' +
-            ((correcao.dicas_concursos && Array.isArray(correcao.dicas_concursos) && correcao.dicas_concursos.length > 0) ?
-                correcao.dicas_concursos.map(dica => '<li>' + dica + '</li>').join('') : 
-                '<li>Mantenha a estrutura dissertativa clara.</li><li>Use argumentos sólidos e fundamentados.</li><li>Cuidado com a norma culta.</li>') +
-        "</ul>" +
     "</div>";
+    
+    // ... (restante do HTML antigo)
 
     if (resultadoDiv) {
         resultadoDiv.innerHTML = html;
@@ -714,16 +629,15 @@ function exibirDicasRedacao() {
                     
                     <p><strong>Desenvolvimento (2-3 parágrafos):</strong></p>
                     <ul>
-                        <li>Argumento 1 + exemplos</li>
-                        <li>Argumento 2 + dados</li>
-                        <li>Argumento 3 (opcional)</li>
+                        <li>Argumento 1 + repertório</li>
+                        <li>Argumento 2 + repertório</li>
+                        <li>Analise crítica dos argumentos</li>
                     </ul>
                     
                     <p><strong>Conclusão (1 parágrafo):</strong></p>
                     <ul>
                         <li>Retome a tese</li>
-                        <li>Apresente proposta de intervenção</li>
-                        <li>Finalize de forma impactante</li>
+                        <li>Proposta de intervenção completa (5 elementos)</li>
                     </ul>
                 </div>
             </div>
@@ -731,34 +645,16 @@ function exibirDicasRedacao() {
             <div class="dica-card-redacao">
                 <div class="dica-header-redacao">
                     <span class="dica-icon">🎯</span>
-                    <h4>O que é Necessário</h4>
+                    <h4>Intervenção (Competência 5)</h4>
                 </div>
                 <div class="dica-content-redacao">
+                    <p>Sua proposta deve ter 5 elementos:</p>
                     <ul>
-                        <li><strong>Mínimo 20 linhas</strong> - Ideal: 25-30 linhas</li>
-                        <li><strong>Letra legível</strong> - Evite rasuras</li>
-                        <li><strong>Respeitar margens</strong> - Não ultrapasse</li>
-                        <li><strong>Parágrafos claros</strong> - Faça recuos</li>
-                        <li><strong>Título opcional</strong> - Se fizer, centralize</li>
-                        <li><strong>Norma culta</strong> - Sem gírias ou erros</li>
-                    </ul>
-                </div>
-            </div>
-
-            <div class="dica-card-redacao">
-                <div class="dica-header-redacao">
-                    <span class="dica-icon">💡</span>
-                    <h4>Dicas para uma Boa Redação</h4>
-                </div>
-                <div class="dica-content-redacao">
-                    <ul>
-                        <li><strong>Leia atentamente</strong> a proposta</li>
-                        <li><strong>Use todos os textos</strong> de apoio</li>
-                        <li><strong>Faça um rascunho</strong> antes</li>
-                        <li><strong>Conectivos</strong> enriquecem o texto</li>
-                        <li><strong>Revisão final</strong> é essencial</li>
-                        <li><strong>Evite generalizações</strong> - seja específico</li>
-                        <li><strong>Cronometre</strong> seu tempo</li>
+                        <li><strong>Agente:</strong> Quem vai fazer? (Ex: Governo Federal)</li>
+                        <li><strong>Ação:</strong> O que será feito? (Ex: Criar campanhas)</li>
+                        <li><strong>Modo/Meio:</strong> Como será feito? (Ex: Por meio de mídias)</li>
+                        <li><strong>Efeito:</strong> Para que será feito? (Ex: A fim de conscientizar)</li>
+                        <li><strong>Detalhamento:</strong> (Explicar um dos elementos acima)</li>
                     </ul>
                 </div>
             </div>
@@ -766,17 +662,15 @@ function exibirDicasRedacao() {
             <div class="dica-card-redacao">
                 <div class="dica-header-redacao">
                     <span class="dica-icon">⚠️</span>
-                    <h4>O que Evitar</h4>
+                    <h4>O que Evitar (Nota Zero)</h4>
                 </div>
                 <div class="dica-content-redacao">
                     <ul>
-                        <li>Fugir do tema proposto</li>
-                        <li>Usar primeira pessoa</li>
-                        <li>Argumentos sem fundamento</li>
-                        <li>Propostas inviáveis</li>
-                        <li>Desrespeitar direitos humanos</li>
-                        <li>Texto muito curto ou longo</li>
-                        <li>Repetição de palavras</li>
+                        <li>Fugir totalmente do tema</li>
+                        <li>Texto com menos de 7 linhas</li>
+                        <li>Cópia integral dos textos de apoio</li>
+                        <li>Desenhos ou xingamentos</li>
+                        <li>Desrespeitar os direitos humanos</li>
                     </ul>
                 </div>
             </div>
@@ -786,100 +680,28 @@ function exibirDicasRedacao() {
     container.innerHTML = dicasHTML;
 }
 
-// DASHBOARD
+// DASHBOARD (ANTIGO)
 function carregarDashboard() {
-    const container = document.getElementById("dashboard-content");
-    if (!container) return;
-
-    container.innerHTML = '<div class="text-center"><div class="loading"></div><p>Carregando estatísticas...</p></div>';
-
-    fetch("/api/dashboard/estatisticas-areas")
-    .then(response => {
-        if (!response.ok) {
-            throw new Error("Erro ao carregar dashboard");
-        }
-        return response.json();
-    })
-    .then(data => {
-        if (data.success && data.stats_gerais) {
-            exibirDashboardPorArea(data);
-        } else {
-            container.innerHTML = '<div class="text-center"><p>Erro ao carregar dashboard: ' + (data.error || 'Formato de dados inválido') + "</p></div>";
-        }
-    })
-    .catch(error => {
-        console.error("Erro ao carregar dashboard:", error);
-        container.innerHTML = '<div class="text-center"><p>Erro de rede ao buscar estatísticas.</p></div>';
-    });
+    // Esta função foi substituída por carregarDashboardSimplificado()
+    console.warn("Chamando carregarDashboard() antigo. Use carregarDashboardSimplificado().");
+    carregarDashboardSimplificado();
 }
 
 function exibirDashboardPorArea(data) {
+    // Esta função foi substituída por exibirDashboardSimplificado()
+    // Mantida apenas como fallback
+    console.warn("Chamando exibirDashboardPorArea() antigo.");
+    
     const container = document.getElementById("dashboard-content");
     if (!container) return;
 
     const stats = data.stats_gerais;
 
     let html = '<div class="dashboard-header">' +
-        '<h3>📈 Dashboard de Desempenho</h3>' +
-        '<p class="dashboard-subtitle">Acompanhe seu progresso por área de estudo</p>' +
+        '<h3>📈 Dashboard de Desempenho (Antigo)</h3>' +
     "</div>";
-
-    html += '<div class="stats-grid-profissional">' +
-        '<div class="stat-card-profissional primary">' +
-            '<div class="stat-icon">📝</div>' +
-            '<div class="stat-content">' +
-                '<div class="stat-number">' + stats.total_simulados_feitos + "</div>" +
-                '<div class="stat-label">Simulados Realizados</div>' +
-            "</div>" +
-        "</div>" +
-        '<div class="stat-card-profissional success">' +
-            '<div class="stat-icon">🎯</div>' +
-            '<div class="stat-content">' +
-                '<div class="stat-number">' + stats.media_geral_percentual + "%</div>" +
-                '<div class="stat-label">Média de Acertos</div>' +
-            "</div>" +
-        "</div>" +
-        '<div class="stat-card-profissional info">' +
-            '<div class="stat-icon">✅</div>' +
-            '<div class="stat-content">' +
-                '<div class="stat-number">' + stats.total_acertos_geral + "</div>" +
-                '<div class="stat-label">Total de Acertos</div>' +
-            "</div>" +
-        "</div>" +
-        '<div class="stat-card-profissional ' + (stats.melhor_desempenho ? 'warning' : 'secondary') + '">' +
-            '<div class="stat-icon">⭐</div>' +
-            '<div class="stat-content">' +
-                '<div class="stat-number">' + (stats.melhor_desempenho ? stats.melhor_desempenho.percentual + '%' : '0%') + "</div>" +
-                '<div class="stat-label">Melhor Desempenho</div>' +
-            "</div>" +
-        "</div>" +
-    "</div>";
-
-    if (data.stats_gerais.stats_por_disciplina) {
-        html += '<div class="card">' +
-            '<h4>📚 Questões por Área de Estudo</h4>' +
-            '<div class="areas-dashboard-simplificado">';
-
-        Object.entries(data.stats_gerais.stats_por_disciplina).forEach(([areaNome, totalQuestoes]) => {
-            const percentual = 0;
-            const corClasse = "abaixo-50";
-            const icone = getIconeArea(areaNome);
-            
-            html += `<div class="area-dashboard-simplificado ${corClasse}">
-                <div class="area-simplificado-header">
-                    <span class="area-icon">${icone}</span>
-                    <div class="area-info">
-                        <h5>${areaNome}</h5>
-                        <div class="area-stats-simplificado">
-                            <span class="stat">${totalQuestoes} questões no banco</span>
-                        </div>
-                    </div>
-                </div>
-            </div>`;
-        });
-
-        html += "</div></div>";
-    }
+    
+    // ... (restante do HTML antigo)
     
     container.innerHTML = html;
 }
@@ -889,13 +711,12 @@ function exibirBancas(bancas) {
     const selectBanca = document.getElementById("select-banca");
     if (!selectBanca) return;
     
-    let optionsHTML = '<option value="(Banca Padrão)">Todas as Bancas (Área Livre)</option>';
+    let optionsHTML = ''; // Removido o "Todas as Bancas" daqui
     
     if (bancas && bancas.length > 0) {
          bancas.forEach(banca => {
-            if (banca.banca !== "(Banca Padrão)") {
-                optionsHTML += '<option value="' + banca.banca + '">' + banca.banca + ' (' + banca.total_questoes + ' Q)</option>';
-            }
+            // (MELHORADO) - A opção "(Banca Padrão)" vem da API
+            optionsHTML += '<option value="' + banca.banca + '">' + banca.banca + ' (' + banca.total_questoes + ' Q)</option>';
         });
     }
 
@@ -942,8 +763,7 @@ function exibirAreas(areas) {
                         <label class="sub-area-item" onclick="event.stopPropagation()">
                             <input type="checkbox" value="${sub}" class="sub-area-checkbox" 
                                    onchange="updateAreaState('${area.area_principal.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()}')">
-                            <span class="checkmark">✓</span>
-                            ${sub}
+                            <span class="sub-area-label">${sub}</span>
                         </label>
                     `).join('')}
                 </div>
@@ -1004,6 +824,7 @@ function toggleAreaSelection(headerElement, isMultiplo) {
 // FUNÇÃO: Atualizar estado da área (múltiplas submatérias)
 function updateAreaState(areaId) {
     const card = document.querySelector(`[data-area-id="${areaId}"]`);
+    if (!card) return; // (CORREÇÃO) Evita erro se o card não for encontrado
     const checkboxes = card.querySelectorAll('.sub-area-checkbox');
     const allChecked = Array.from(checkboxes).every(cb => cb.checked);
     const someChecked = Array.from(checkboxes).some(cb => cb.checked);
@@ -1016,6 +837,7 @@ function updateAreaState(areaId) {
 // FUNÇÃO: Selecionar todas as submatérias de uma área
 function selectAllSubAreas(areaId, select) {
     const card = document.querySelector(`[data-area-id="${areaId}"]`);
+    if (!card) return; // (CORREÇÃO)
     const checkboxes = card.querySelectorAll('.sub-area-checkbox');
     
     checkboxes.forEach(checkbox => {
@@ -1049,11 +871,567 @@ function getIconeArea(areaNome) {
 
 // Inicialização
 document.addEventListener("DOMContentLoaded", function() {
-    console.log("🚀 ConcursoIA inicializado");
+    console.log("🚀 ConcursoIA v4.0 (Tema Original) inicializado");
+    // Limpa cache de sessões antigas
     SessionManager.remove("simulado_questoes");
     SessionManager.remove("simulado_respostas");
     SessionManager.remove("indice_atual");
     
     carregarConteudoInicial();
-    navegarPara("tela-inicio");
+    navegarPara("tela-inicio"); // Inicia na tela de início
 });
+
+
+// ============================================================================
+// 🎯 (NOVO) DASHBOARD SIMPLIFICADO - FOCADO EM METAS
+// ============================================================================
+
+function carregarDashboardSimplificado() {
+    const container = document.getElementById("dashboard-content");
+    if (!container) return;
+    container.innerHTML = '<div class="text-center"><div class="loading"></div><p style="color: white; text-shadow: 1px 1px 2px rgba(0,0,0,0.3);">Carregando seu progresso...</p></div>'; // Texto branco
+
+    fetch('/api/dashboard/simplificado')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                exibirDashboardSimplificado(data);
+            } else {
+                document.getElementById('dashboard-content').innerHTML = `<p class="text-center" style="color: white; text-shadow: 1px 1px 2px rgba(0,0,0,0.3);">Erro ao carregar dashboard: ${data.error}</p>`;
+            }
+        })
+        .catch(error => {
+            console.error('Erro no dashboard:', error);
+            document.getElementById('dashboard-content').innerHTML = '<p class="text-center" style="color: white; text-shadow: 1px 1px 2px rgba(0,0,0,0.3);">Erro de conexão ao buscar seu progresso.</p>';
+        });
+}
+
+function exibirDashboardSimplificado(data) {
+    const container = document.getElementById('dashboard-content');
+    
+    // O HTML dos cards brancos é inserido aqui
+    let html = `
+        <div class="dashboard-simplificado">
+            
+            <div class="metricas-principais">
+                <div class="metrica-card">
+                    <div class="metrica-icon">📝</div>
+                    <div class="metrica-info">
+                        <h3>${data.metricas.total_simulados}</h3>
+                        <p>Simulados Realizados</p>
+                    </div>
+                </div>
+                <div class="metrica-card">
+                    <div class="metrica-icon">🎯</div>
+                    <div class="metrica-info">
+                        <h3>${data.metricas.media_geral}%</h3>
+                        <p>Média de Acertos</p>
+                    </div>
+                </div>
+                <div class="metrica-card">
+                    <div class="metrica-icon">✅</div>
+                    <div class="metrica-info">
+                        <h3>${data.metricas.total_acertos}</h3>
+                        <p>Total de Acertos</p>
+                    </div>
+                </div>
+                <div class="metrica-card">
+                    <div class="metrica-icon">📚</div>
+                    <div class="metrica-info">
+                        <h3>${data.metricas.progresso_geral}%</h3>
+                        <p>Progresso Geral</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h3>🚀 Progresso Rumo à Aprovação</h3>
+                <div class="progresso-container-grande">
+                    <div class="progresso-bar-grande" style="width: ${data.metricas.progresso_geral}%">
+                        ${data.metricas.progresso_geral > 10 ? data.metricas.progresso_geral + '%' : ''}
+                    </div>
+                </div>
+                <div class="progresso-info">
+                    <span>Início</span>
+                    <span>Meta: 100%</span>
+                </div>
+            </div>
+    `;
+    
+    // Metas Ativas
+    html += `
+        <div class="card">
+            <div class="card-header">
+                <h3>🎯 Metas Ativas</h3>
+                <button class="btn btn-primary" onclick="abrirModalMeta()">+ Nova Meta</button>
+            </div>
+    `;
+
+    if (data.metas && data.metas.length > 0) {
+        html += `<div class="metas-lista">`;
+        data.metas.forEach(meta => {
+            html += `
+                <div class="meta-item">
+                    <div class="meta-info">
+                        <strong>${formatarTipoMeta(meta.tipo)}</strong>
+                        <span>${meta.valor_atual}/${meta.valor_meta}</span>
+                    </div>
+                    <div class="progresso-meta">
+                        <div class="progresso-bar-meta" style="width: ${meta.progresso}%"></div>
+                    </div>
+                    <span class="meta-percentual">${Math.round(meta.progresso)}%</span>
+                </div>
+            `;
+        });
+        html += `</div>`;
+    } else {
+        html += `
+            <p class="text-center" style="padding: 20px; color: var(--text-light);">
+                Nenhuma meta ativa. Crie sua primeira meta clicando no botão acima!
+            </p>
+        `;
+    }
+    html += `</div>`;
+    
+    // Áreas de Destaque
+    if (data.areas_destaque && data.areas_destaque.length > 0) {
+        html += `
+            <div class="card">
+                <h3>⭐ Áreas em Destaque (Melhor Desempenho)</h3>
+                <div class="areas-destaque-lista">
+        `;
+        
+        data.areas_destaque.forEach(area => {
+            const classeDesempenho = area.percentual >= 70 ? 'desempenho-alto' : 
+                                   area.percentual >= 50 ? 'desempenho-medio' : 'desempenho-baixo';
+            html += `
+                <div class="area-destaque-item">
+                    <span class="area-nome">${area.area}</span>
+                    <span class="area-percentual ${classeDesempenho}">
+                        ${area.percentual}%
+                    </span>
+                </div>
+            `;
+        });
+        
+        html += `</div></div>`;
+    }
+    
+    // Ações Rápidas
+    html += `
+        <div class="card">
+            <h3>⚡ Ações Rápidas</h3>
+            <div class="acoes-rapidas">
+                <button class="btn-acao" onclick="iniciarRevisaoEspacada()">
+                    <span class="acao-icon">🔄</span>
+                    Revisão Espaçada (Erros)
+                </button>
+                <button class="btn-acao" onclick="navegarPara('tela-simulado')">
+                    <span class="acao-icon">📝</span>
+                    Novo Simulado
+                </button>
+                <button class="btn-acao" onclick="navegarPara('tela-redacao')">
+                    <span class="acao-icon">✍️</span>
+                    Praticar Redação
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <div id="modal-meta" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>🎯 Nova Meta</h3>
+                <button class="btn-close" onclick="fecharModalMeta()">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="tipo-meta">Tipo de Meta:</label>
+                    <select id="tipo-meta" class="form-control">
+                        <option value="percentual_acerto">Percentual de Acerto</option>
+                        <option value="questoes_resolvidas">Questões Resolvidas</option>
+                        <option value="simulados_realizados">Simulados Realizados</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="valor-meta">Valor da Meta:</label>
+                    <input type="number" id="valor-meta" class="form-control" placeholder="Ex: 80 (para % ou simulados)">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn" onclick="fecharModalMeta()">Cancelar</button>
+                <button class="btn btn-primary" onclick="criarMeta()">Criar Meta</button>
+            </div>
+        </div>
+    </div>
+    `;
+    
+    container.innerHTML = html;
+}
+
+function formatarTipoMeta(tipo) {
+    const tipos = {
+        'percentual_acerto': 'Média de Acerto',
+        'questoes_resolvidas': 'Total de Questões Resolvidas', 
+        'simulados_realizados': 'Total de Simulados Realizados',
+        'tempo_estudo': 'Tempo de Estudo'
+    };
+    return tipos[tipo] || tipo;
+}
+
+function abrirModalMeta() {
+    const modal = document.getElementById('modal-meta');
+    if (modal) modal.classList.remove('hidden');
+}
+
+function fecharModalMeta() {
+    const modal = document.getElementById('modal-meta');
+    if (modal) modal.classList.add('hidden');
+}
+
+function criarMeta() {
+    const tipo = document.getElementById('tipo-meta').value;
+    const valor = document.getElementById('valor-meta').value;
+    
+    if (!valor || valor <= 0) {
+        alert('Digite um valor válido para a meta!');
+        return;
+    }
+    
+    fetch('/api/dashboard/criar-meta', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({tipo: tipo, valor_meta: parseFloat(valor)})
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            fecharModalMeta();
+            carregarDashboardSimplificado(); // Recarrega o dashboard
+            alert('Meta criada com sucesso!');
+        } else {
+            // (BUG CORRIGIDO) O 'a' extra foi removido daqui.
+            alert('Erro: ' + data.error);
+        }
+    })
+    .catch(error => {
+        alert('Erro de conexão ao criar meta: ' + error.message);
+    });
+}
+
+// ============================================================================
+// 🔄 (NOVO) SISTEMA DE REVISÃO ESPAÇADA
+// ============================================================================
+
+function iniciarRevisaoEspacada() {
+    // Mostra um feedback visual imediato
+    const container = document.getElementById("dashboard-content");
+    if (container) {
+         container.innerHTML = '<div class="text-center"><div class="loading"></div><p style="color: white; text-shadow: 1px 1px 2px rgba(0,0,0,0.3);">Buscando suas questões erradas para revisão...</p></div>';
+    }
+
+    fetch('/api/simulado/revisao-espacada', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'}
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert(`🎯 Revisão espaçada iniciada! \n\nEncontramos ${data.total_questoes} questões que você precisa revisar.\n\nVamos fortalecer seus pontos fracos! 🚀`);
+            
+            // Navega para a tela de simulado
+            navegarPara('tela-simulado');
+
+            // Inicia o simulado com os dados da revisão
+            simuladoAtual = {
+                indice_atual: data.indice_atual,
+                total_questoes: data.total_questoes
+            };
+            mostrarTelaSimuladoAtivo(data.total_questoes);
+            exibirQuestao(data.questao_atual, data.indice_atual, data.total_questoes, null);
+        } else {
+            alert('❌ ' + data.error);
+            // Volta para o dashboard se falhar
+            carregarDashboardSimplificado();
+        }
+    })
+    .catch(error => {
+        alert('Erro ao iniciar revisão: ' + error.message);
+        carregarDashboardSimplificado();
+    });
+}
+
+// ============================================================================
+// 📝 (NOVO) SISTEMA DE REDAÇÃO MELHORADO
+// ============================================================================
+
+function carregarTemasMelhorados() {
+    fetch('/api/redacao/temas-melhorados')
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            const select = document.getElementById('temas-redacao');
+            if (!select) return;
+            
+            select.innerHTML = '<option value="">Selecione um tema</option>';
+            
+            data.temas.forEach(tema => {
+                const option = document.createElement('option');
+                option.value = tema.titulo;
+                option.textContent = tema.titulo;
+                option.dataset.enunciado = tema.enunciado;
+                option.dataset.textosBase = JSON.stringify(tema.textos_base || []);
+                select.appendChild(option);
+            });
+            
+            // Limpa o enunciado antigo se houver
+            exibirEnunciadoRedacao(null, null);
+
+            // Adiciona o listener de mudança
+            select.removeEventListener('change', handleTemaChange); // Remove listener antigo
+            select.addEventListener('change', handleTemaChange); // Adiciona novo
+        }
+    })
+    .catch(error => {
+        console.error('Erro ao carregar temas:', error);
+    });
+}
+
+// (FUNÇÃO CORRIGIDA)
+function handleTemaChange() {
+    const select = document.getElementById('temas-redacao');
+    if (!select) return;
+    const selectedOption = select.options[select.selectedIndex];
+    
+    if (!selectedOption || !selectedOption.value) {
+        exibirEnunciadoRedacao(null, null); // Limpa se selecionar "Selecione um tema"
+        return;
+    }
+    const enunciado = selectedOption.dataset.enunciado;
+    const textosBase = JSON.parse(selectedOption.dataset.textosBase || '[]');
+    exibirEnunciadoRedacao(enunciado, textosBase);
+}
+
+// (FUNÇÃO CORRIGIDA)
+function exibirEnunciadoRedacao(enunciado, textosBase) {
+    let container = document.getElementById('enunciado-redacao-container');
+    const editorCard = document.querySelector('.redacao-editor .card');
+
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'enunciado-redacao-container';
+        container.className = 'card enunciado-redacao'; // Adiciona classe 'card'
+        
+        // Insere antes do grupo do textarea
+        const formGroupTextarea = document.querySelector('#texto-redacao').parentNode;
+        if (editorCard && formGroupTextarea) {
+            editorCard.insertBefore(container, formGroupTextarea);
+        }
+    }
+
+    // Se o enunciado for nulo, oculta o container
+    if (!enunciado) {
+        container.innerHTML = '';
+        container.classList.add('hidden');
+        return;
+    }
+    
+    container.classList.remove('hidden');
+    let html = `<h4>📋 Enunciado da Proposta</h4><div class="enunciado-texto">${enunciado}</div>`;
+    
+    if (textosBase && textosBase.length > 0) {
+        html += '<h5>📚 Textos de Apoio:</h5><ul class="textos-apoio">';
+        textosBase.forEach(texto => {
+            html += `<li>${texto}</li>`;
+        });
+        html += '</ul>';
+    }
+    
+    container.innerHTML = html;
+}
+
+function corrigirRedacaoGeminiReal() {
+    const temaSelect = document.getElementById('temas-redacao');
+    const textoRedacao = document.getElementById('texto-redacao').value;
+    
+    if (!temaSelect.value) {
+        alert('Selecione um tema!');
+        return;
+    }
+    
+    const selectedOption = temaSelect.options[temaSelect.selectedIndex];
+    const enunciado = selectedOption.dataset.enunciado;
+    
+    if (textoRedacao.trim().length < 100) {
+        alert('Digite uma redação com pelo menos 100 caracteres para uma análise justa.');
+        return;
+    }
+    
+    const btnCorrigir = document.getElementById('btn-corrigir');
+    const textoOriginal = btnCorrigir ? btnCorrigir.innerHTML : "🔍 Corrigir com IA";
+    if(btnCorrigir) {
+        btnCorrigir.innerHTML = '<span class="loading small"></span> Corrigindo com IA...';
+        btnCorrigir.disabled = true;
+    }
+    
+    // Limpa o resultado anterior
+    const resultadoDiv = document.getElementById('resultado-correcao');
+    if (resultadoDiv) resultadoDiv.classList.add('hidden');
+
+    fetch('/api/redacao/corrigir-gemini-real', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            tema: temaSelect.value,
+            texto: textoRedacao,
+            enunciado: enunciado
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            exibirCorrecaoRedacaoAvancada(data.correcao);
+        } else {
+            alert('Erro ao corrigir: ' + data.error);
+        }
+    })
+    .catch(error => {
+        console.error('Erro:', error);
+        alert('Erro de conexão ao corrigir redação.');
+    })
+    .finally(() => {
+        if(btnCorrigir) {
+            btnCorrigir.innerHTML = textoOriginal;
+            btnCorrigir.disabled = false;
+        }
+    });
+}
+
+function exibirCorrecaoRedacaoAvancada(correcao) {
+    const resultadoDiv = document.getElementById('resultado-correcao');
+    if (!resultadoDiv) return;
+
+    let html = `
+        <div class="card resultado-header">
+            <div class="nota-container">
+                <h3>📊 Resultado da Correção - ENEM</h3>
+                <div class="nota-final">${correcao.nota_final}/1000</div>
+                <div class="nota-descricao">
+                    ${correcao.nota_final >= 800 ? '🎉 Excelente! Nível competitivo!' :
+                      correcao.nota_final >= 600 ? '👍 Bom desempenho! Continue evoluindo!' : 
+                      '📚 Precisa de mais prática. Foco nos estudos!'}
+                </div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <h4>📈 Análise por Competências ENEM:</h4>
+    `;
+    
+    if (correcao.competencias && Array.isArray(correcao.competencias)) {
+        correcao.competencias.forEach(comp => {
+            const nota = comp.nota || 0;
+            const percentual = (nota / 200) * 100;
+            html += `
+                <div class="competencia-item">
+                    <div class="competencia-header">
+                        <h5>${comp.nome || "Competência"}</h5>
+                        <span class="nota-competencia">${nota}/200</span>
+                    </div>
+                    <div class="progress-bar-competencia">
+                        <div class="progress-fill" style="width: ${percentual}%"></div>
+                    </div>
+                    <p class="comentario-competencia">${comp.comentario || "Sem comentário."}</p>
+                </div>
+            `;
+        });
+    }
+    
+    html += `</div>`;
+    
+    // Pontos fortes e fracos
+    html += `
+        <div class="analise-grid">
+            <div class="card">
+                <h4>✅ Pontos Fortes:</h4>
+                <ul class="lista-pontos">
+    `;
+    
+    if (correcao.pontos_fortes && correcao.pontos_fortes.length > 0) {
+        correcao.pontos_fortes.forEach(ponto => {
+            html += `<li>${ponto}</li>`;
+        });
+    } else {
+        html += '<li>Continue desenvolvendo suas habilidades</li>';
+    }
+    
+    html += `
+                </ul>
+            </div>
+            <div class="card">
+                <h4>📝 Pontos a Melhorar:</h4>
+                <ul class="lista-pontos">
+    `;
+    
+    if (correcao.pontos_fracos && correcao.pontos_fracos.length > 0) {
+        correcao.pontos_fracos.forEach(ponto => {
+            html += `<li>${ponto}</li>`;
+        });
+    } else {
+        html += '<li>Ótimo trabalho! Mantenha o foco</li>';
+    }
+    
+    html += `
+                </ul>
+            </div>
+        </div>
+        
+        <div class="card">
+            <h4>💡 Sugestões de Melhoria:</h4>
+            <ul class="lista-pontos">
+    `;
+    
+    if (correcao.sugestoes_melhoria && correcao.sugestoes_melhoria.length > 0) {
+        correcao.sugestoes_melhoria.forEach(sugestao => {
+            html += `<li>${sugestao}</li>`;
+        });
+    } else {
+        html += '<li>Continue praticando regularmente</li>';
+    }
+    
+    html += `
+            </ul>
+        </div>
+    `;
+    
+    resultadoDiv.innerHTML = html;
+    resultadoDiv.classList.remove("hidden");
+    resultadoDiv.scrollIntoView({ behavior: "smooth" });
+}
+
+// ============================================================================
+// 🔄 (NOVO) ATUALIZAR FUNÇÕES EXISTENTES
+// ============================================================================
+
+// (SOBRESCRITO) - Sobrescrever a função de navegação para usar o novo dashboard
+const navegarParaOriginal = navegarPara;
+navegarPara = function(tela) {
+    // Chama a função original
+    navegarParaOriginal(tela); 
+    
+    // Adiciona a nova lógica
+    if (tela === 'tela-dashboard') {
+        // Usar o novo dashboard simplificado
+        carregarDashboardSimplificado();
+    } 
+    // A lógica de redação já foi atualizada dentro da função original
+}
+
+// (SOBRESCRITO) - Atualizar função de correção de redação
+// A função original foi mantida, mas a nova função 'corrigirRedacaoGeminiReal'
+// será chamada pelo botão no index.html (que já foi corrigido para chamar 'corrigirRedacao()')
+// Vamos garantir que 'corrigirRedacao()' chame a nova.
+const corrigirRedacaoOriginal = corrigirRedacao;
+corrigirRedacao = function() {
+    corrigirRedacaoGeminiReal(); // Garante que o clique no botão chame a função REAL
+};

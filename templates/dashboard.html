@@ -1,0 +1,119 @@
+﻿<!-- templates/dashboard.html -->
+<div class="dashboard-simplificado">
+    <div class="dashboard-header">
+        <h2>📈 Meu Progresso</h2>
+        <p>Acompanhe sua jornada rumo à aprovação</p>
+    </div>
+
+    <!-- Métricas Principais -->
+    <div class="metricas-principais">
+        <div class="metrica-card">
+            <div class="metrica-icon">📝</div>
+            <div class="metrica-info">
+                <h3 id="total-simulados">0</h3>
+                <p>Simulados Realizados</p>
+            </div>
+        </div>
+        <div class="metrica-card">
+            <div class="metrica-icon">🎯</div>
+            <div class="metrica-info">
+                <h3 id="media-geral">0%</h3>
+                <p>Média de Acertos</p>
+            </div>
+        </div>
+        <div class="metrica-card">
+            <div class="metrica-icon">✅</div>
+            <div class="metrica-info">
+                <h3 id="total-acertos">0</h3>
+                <p>Total de Acertos</p>
+            </div>
+        </div>
+        <div class="metrica-card">
+            <div class="metrica-icon">📚</div>
+            <div class="metrica-info">
+                <h3 id="progresso-geral">0%</h3>
+                <p>Progresso Geral</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Barra de Progresso Principal -->
+    <div class="card">
+        <h3>🚀 Progresso Rumo à Aprovação</h3>
+        <div class="progresso-container-grande">
+            <div class="progresso-bar-grande" id="progresso-aprovacao"></div>
+        </div>
+        <div class="progresso-info">
+            <span>Início</span>
+            <span id="progresso-texto">0%</span>
+            <span>Aprovado!</span>
+        </div>
+    </div>
+
+    <!-- Metas Ativas -->
+    <div class="card">
+        <div class="card-header">
+            <h3>🎯 Metas Ativas</h3>
+            <button class="btn btn-sm" onclick="abrirModalMeta()">+ Nova Meta</button>
+        </div>
+        <div id="lista-metas">
+            <div class="loading"></div>
+        </div>
+    </div>
+
+    <!-- Áreas de Destaque -->
+    <div class="card">
+        <h3>⭐ Áreas em Destaque</h3>
+        <div id="areas-destaque">
+            <div class="loading"></div>
+        </div>
+    </div>
+
+    <!-- Ações Rápidas -->
+    <div class="card">
+        <h3>⚡ Ações Rápidas</h3>
+        <div class="acoes-rapidas">
+            <button class="btn-acao" onclick="iniciarRevisaoEspacada()">
+                <span class="acao-icon">🔄</span>
+                Revisão Espaçada
+            </button>
+            <button class="btn-acao" onclick="navegarPara('tela-simulado')">
+                <span class="acao-icon">📝</span>
+                Novo Simulado
+            </button>
+            <button class="btn-acao" onclick="navegarPara('tela-redacao')">
+                <span class="acao-icon">✍️</span>
+                Praticar Redação
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Nova Meta -->
+<div id="modal-meta" class="modal hidden">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>🎯 Nova Meta</h3>
+            <button class="btn-close" onclick="fecharModalMeta()">×</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label>Tipo de Meta:</label>
+                <select id="tipo-meta" class="form-control">
+                    <option value="percentual_acerto">Percentual de Acerto</option>
+                    <option value="questoes_resolvidas">Questões Resolvidas</option>
+                    <option value="simulados_realizados">Simulados Realizados</option>
+                    <option value="tempo_estudo">Tempo de Estudo (horas)</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Valor da Meta:</label>
+                <input type="number" id="valor-meta" class="form-control" placeholder="Ex: 80">
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn" onclick="fecharModalMeta()">Cancelar</button>
+            <button class="btn btn-primary" onclick="criarMeta()">Criar Meta</button>
+        </div>
+    </div>
+</div>
