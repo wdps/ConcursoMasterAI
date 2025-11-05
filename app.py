@@ -171,7 +171,7 @@ def get_areas():
         return jsonify({"success": False, "error": str(e)}), 500
 
 # ---
-# --- (CORREÇÃO 1) Rota /api/bancas ---
+# --- (CORREÇÃO 2 - PARTE A) Rota /api/bancas ---
 # ---
 @app.route('/api/bancas')
 def get_bancas():
@@ -180,7 +180,7 @@ def get_bancas():
         if df_questoes.empty:
              return jsonify({"success": False, "error": "Banco de questões não carregado"}), 500
         
-        # (CORREÇÃO) Remove a leitura da coluna 'banca' que não existe no CSV.
+        # (CORREÇÃO) Remove a leitura da coluna 'banca'/'Banca_Organizadora' que não existe.
         # Retorna APENAS a banca padrão.
         bancas_reais = [{"banca": "(Banca Padrão)", "total_questoes": len(df_questoes)}]
         
@@ -188,7 +188,8 @@ def get_bancas():
     except Exception as e:
         print(f"ERRO em /api/bancas: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
-# --- FIM DA CORREÇÃO 1 ---
+# --- FIM DA CORREÇÃO 2 - PARTE A ---
+
 
 # ---
 # --- API DO SIMULADO (Rotas de Sessão Inalteradas) ---
@@ -208,11 +209,11 @@ def iniciar_simulado():
 
         questoes_filtradas = df_questoes[df_questoes['disciplina'].isin(areas_selecionadas)]
         
-        # --- (CORREÇÃO 1 - Parte B) ---
+        # --- (CORREÇÃO 2 - PARTE B) ---
         # A linha abaixo foi comentada pois a coluna 'banca' não existe no seu CSV.
         # if banca_selecionada and banca_selecionada != "(Banca Padrão)":
         #     questoes_filtradas = questoes_filtradas[questoes_filtradas['banca'] == banca_selecionada]
-        # --- FIM DA CORREÇÃO 1 - Parte B ---
+        # --- FIM DA CORREÇÃO 2 - PARTE B ---
 
         if questoes_filtradas.empty:
             return jsonify({"success": False, "error": "Nenhuma questão encontrada para os filtros selecionados."}), 404
@@ -675,7 +676,7 @@ TEMAS_REDACAO_MELHORADOS = [
         "enunciado": "Redija um texto dissertativo-argumentativo sobre o tema 'Democratização do acesso à internet e o combate à exclusão digital no Brasil', abordando suas causas, consequências e propondo soluções.",
         "textos_base": [
             "Texto 1: 'Cerca de 28 milhões de brasileiros não têm acesso à internet, segundo a pesquisa TIC Domicílios 2023. Nas áreas rurais, esse percentual é significativamente maior, chegando a 45% dos domicílios.' (Fonte: Cetic.br)",
-            "Texto 2: 'A exclusão digital não છે apenas a falta de conexão; é também a falta de equipamentos adequados (computadores vs. apenas celular) e de letramento digital (saber usar as ferramentas de forma crítica e segura).'",
+            "Texto 2: 'A exclusão digital não é apenas a falta de conexão; é também a falta de equipamentos adequados (computadores vs. apenas celular) e de letramento digital (saber usar as ferramentas de forma crítica e segura).'",
             "Texto 3: 'Durante a pandemia, o acesso à educação, saúde (telemedicina) e auxílios governamentais (Auxílio Emergencial) dependeu diretamente da conectividade, transformando a internet em um serviço essencial e um direito de cidadania.' (Fonte: Relatório PNAD COVID-19)"
         ]
     },
@@ -1145,7 +1146,11 @@ def corrigir_redacao_gemini_real():
             }}
             '''
             
-            model = genai.GenerativeModel('gemini-1.5-pro-latest')
+            # --- (CORREÇÃO 1) Modelo do Gemini ---
+            # O modelo 'gemini-1.5-pro-latest' falhou no log. Mudando para o '1.0-pro'.
+            model = genai.GenerativeModel('gemini-1.0-pro')
+            # --- FIM DA CORREÇÃO 1 ---
+
             response = model.generate_content(prompt)
             
             # Limpa a resposta do Gemini para garantir que é um JSON
@@ -1190,5 +1195,3 @@ if __name__ == '__main__':
     # (NOVO) O app.run() agora só é usado para testes locais
     # O Gunicorn (servidor de produção) será usado pelo Render
     app.run(debug=True)
-}
-me envie um novo app completo com a correcao dos dois problemas detectados !!
