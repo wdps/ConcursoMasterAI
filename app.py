@@ -2,21 +2,40 @@
 import pandas as pd
 import json
 import random
-import sqlite3
-import os  # Adicionado
-import google.generativeai as genai  # Adicionado
-from dotenv import load_dotenv  # Adicionado
-from flask import Flask, render_template, jsonify, request, session, g
+import os
+import google.generativeai as genai
+from dotenv import load_dotenv
+from flask import Flask, render_template, jsonify, request, session
 from collections import defaultdict
+from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy.sql import func # (NOVO) Para usar funções como AVG, SUM, COUNT
 
-load_dotenv()  # Adicionado - Carrega variáveis do .env
+load_dotenv() # Carrega variáveis do .env
 
 app = Flask(__name__)
-app.secret_key = "chave-secreta-concursoia-2024"
-DATABASE = 'database.db'
 
 # ---
-# --- FONTE DE DADOS PRINCIPAL (PANDAS) ---
+# --- (ALTERADO) Configuração do Banco de Dados (Pronto para Nuvem) ---
+# ---
+# Lê as variáveis de ambiente (do Render ou do seu .env local)
+DATABASE_URL = os.environ.get('DATABASE_URL')
+SECRET_KEY = os.environ.get('SECRET_KEY', 'chave-padrao-local-para-testes-seguros')
+
+if not DATABASE_URL:
+    # Para testes locais, podemos apontar para um SQLite, mas o ideal é o Render
+    print("AVISO: DATABASE_URL não definida, usando SQLite local 'database.db'")
+    DATABASE_URL = 'sqlite:///database.db'
+    
+# Configura o app
+app.secret_key = SECRET_KEY
+app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# Inicializa o SQLAlchemy
+db = SQLAlchemy(app)
+
+# ---
+# --- FONTE DE DADOS PRINCIPAL (PANDAS - Inalterado) ---
 # ---
 try:
     df_questoes = pd.read_csv('questoes.csv', sep=';', quotechar='"')
@@ -30,7 +49,7 @@ except Exception as e:
 # --- FIM DA FONTE DE DADOS ---
 
 # ---
-# --- MAPA DE ÁREAS (Usado pela API /api/areas) ---
+# --- MAPA DE ÁREAS (Usado pela API /api/areas - Inalterado) ---
 # ---
 MAPA_AREAS = {
     "Língua Portuguesa": ["Língua Portuguesa"],
@@ -44,79 +63,73 @@ MAPA_AREAS = {
 }
 
 # ---
-# --- Funções do Banco de Dados (SQLite - Para Resultados) ---
+# --- (NOVO) Modelos do Banco de Dados (Substitui o SQL do init-db) ---
 # ---
-def get_db():
-    db = getattr(g, '_database', None)
-    if db is None:
-        db = g._database = sqlite3.connect(DATABASE)
-        db.row_factory = sqlite3.Row
-    return db
+# Isso traduz suas tabelas para Classes Python
 
-@app.teardown_appcontext
-def close_connection(exception):
-    db = getattr(g, '_database', None)
-    if db is not None:
-        db.close()
+class ResultadosSimulados(db.Model):
+    __tablename__ = 'resultados_simulados'
+    id = db.Column(db.Integer, primary_key=True)
+    usuario_id = db.Column(db.Integer, nullable=False, default=1) # Fixo em 1 por enquanto
+    data = db.Column(db.DateTime, server_default=func.now())
+    total_questoes = db.Column(db.Integer, nullable=False)
+    total_acertos = db.Column(db.Integer, nullable=False)
+    percentual_acerto = db.Column(db.Float, nullable=False)
+    tipo_simulado = db.Column(db.String(50), default='normal')
 
-# (NOVO E CRÍTICO) - Comando para criar as tabelas
+class RespostasUsuarios(db.Model):
+    __tablename__ = 'respostas_usuarios'
+    id = db.Column(db.Integer, primary_key=True)
+    usuario_id = db.Column(db.Integer, nullable=False, default=1)
+    questao_id = db.Column(db.Integer, nullable=False)
+    acertou = db.Column(db.Boolean, nullable=False)
+    data_resposta = db.Column(db.DateTime, server_default=func.now())
+    disciplina = db.Column(db.String(100))
+
+class MetasUsuarios(db.Model):
+    __tablename__ = 'metas_usuarios'
+    id = db.Column(db.Integer, primary_key=True)
+    usuario_id = db.Column(db.Integer, nullable=False, default=1)
+    tipo_meta = db.Column(db.String(100), nullable=False)
+    valor_meta = db.Column(db.Float, nullable=False)
+    valor_atual = db.Column(db.Float, default=0)
+    concluida = db.Column(db.Boolean, default=False)
+
+class DesempenhoAreas(db.Model):
+    __tablename__ = 'desempenho_areas'
+    id = db.Column(db.Integer, primary_key=True)
+    usuario_id = db.Column(db.Integer, nullable=False, default=1)
+    area = db.Column(db.String(100), nullable=False)
+    total_questoes = db.Column(db.Integer, default=0)
+    total_acertos = db.Column(db.Integer, default=0)
+    percentual_acerto = db.Column(db.Float, default=0)
+    # Adiciona a restrição 'UNIQUE'
+    __table_args__ = (db.UniqueConstraint('usuario_id', 'area', name='_usuario_area_uc'),)
+
+
+# ---
+# --- (REMOVIDO) Funções get_db() e close_connection() ---
+# O SQLAlchemy gerencia conexões automaticamente.
+# ---
+
+# ---
+# --- (ALTERADO) Comando init-db agora usa SQLAlchemy ---
+# ---
 @app.cli.command('init-db')
 def init_db_command():
     """Limpa os dados existentes e cria novas tabelas."""
-    db = get_db()
-    
-    # Usamos f-strings para o schema para facilitar a leitura (seguro para schema)
-    schema_script = f"""
-    DROP TABLE IF EXISTS resultados_simulados;
-    DROP TABLE IF EXISTS respostas_usuarios;
-    DROP TABLE IF EXISTS metas_usuarios;
-    DROP TABLE IF EXISTS desempenho_areas;
-
-    CREATE TABLE resultados_simulados (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        usuario_id INTEGER NOT NULL,
-        data DATETIME DEFAULT CURRENT_TIMESTAMP,
-        total_questoes INTEGER NOT NULL,
-        total_acertos INTEGER NOT NULL,
-        percentual_acerto REAL NOT NULL,
-        tipo_simulado TEXT DEFAULT 'normal'
-    );
-
-    CREATE TABLE respostas_usuarios (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        usuario_id INTEGER NOT NULL,
-        questao_id INTEGER NOT NULL,
-        acertou BOOLEAN NOT NULL,
-        data_resposta DATETIME DEFAULT CURRENT_TIMESTAMP,
-        disciplina TEXT
-    );
-
-    CREATE TABLE metas_usuarios (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        usuario_id INTEGER NOT NULL,
-        tipo_meta TEXT NOT NULL,
-        valor_meta REAL NOT NULL,
-        valor_atual REAL DEFAULT 0,
-        concluida BOOLEAN DEFAULT 0
-    );
-
-    CREATE TABLE desempenho_areas (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        usuario_id INTEGER NOT NULL,
-        area TEXT NOT NULL,
-        total_questoes INTEGER DEFAULT 0,
-        total_acertos INTEGER DEFAULT 0,
-        percentual_acerto REAL DEFAULT 0,
-        UNIQUE(usuario_id, area)
-    );
-    """
-    
-    db.executescript(schema_script)
-    db.commit()
-    print('Banco de dados inicializado com as novas tabelas.')
+    try:
+        print('Limpando tabelas existentes (se houver)...')
+        db.drop_all()
+        print('Criando novas tabelas...')
+        db.create_all()
+        print('Banco de dados inicializado com as novas tabelas.')
+    except Exception as e:
+        print(f"Erro ao inicializar o banco: {e}")
+        print("Certifique-se que a DATABASE_URL está correta e o banco acessível.")
 
 # ---
-# --- Rota Principal ---
+# --- Rota Principal (Inalterada) ---
 # ---
 @app.route('/')
 def index():
@@ -127,6 +140,7 @@ def index():
 # ---
 @app.route('/api/areas')
 def get_areas():
+    # Esta rota não usa o banco de dados, inalterada
     try:
         if df_questoes.empty:
             return jsonify({"success": False, "error": "Banco de questões não carregado"}), 500
@@ -158,36 +172,36 @@ def get_areas():
 
 @app.route('/api/bancas')
 def get_bancas():
+    # Esta rota não usa o banco de dados, inalterada
     try:
         if df_questoes.empty:
              return jsonify({"success": False, "error": "Banco de questões não carregado"}), 500
         
-        # (MELHORADO) - Agora lê as bancas reais do CSV
         contagem_bancas = df_questoes['banca'].value_counts().to_dict()
         bancas_reais = []
         
-        # Adiciona a opção padrão
         bancas_reais.append({"banca": "(Banca Padrão)", "total_questoes": len(df_questoes)})
         
         for banca, total in contagem_bancas.items():
             if banca and banca != "(Banca Padrão)": # Ignora bancas vazias
                 bancas_reais.append({"banca": banca, "total_questoes": total})
 
-        return jsonify({"success": True, "bancas": bancas_reais}) 
+        return jsonify({"success": True, "bancas": bancas_reais})
     except Exception as e:
         print(f"ERRO em /api/bancas: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
 
 # ---
-# --- API DO SIMULADO (Corrigida para usar PANDAS) ---
+# --- API DO SIMULADO (Rotas de Sessão Inalteradas) ---
 # ---
 
 @app.route('/api/simulado/iniciar', methods=['POST'])
 def iniciar_simulado():
+    # Esta rota usa Pandas + Sessão, inalterada
     try:
         data = request.json
         areas_selecionadas = data.get('areas', [])
-        banca_selecionada = data.get('banca') 
+        banca_selecionada = data.get('banca')
         quantidade_str = data.get('quantidade', '10')
 
         if not areas_selecionadas:
@@ -195,7 +209,6 @@ def iniciar_simulado():
 
         questoes_filtradas = df_questoes[df_questoes['disciplina'].isin(areas_selecionadas)]
         
-        # (MELHORADO) - Filtro de banca real
         if banca_selecionada and banca_selecionada != "(Banca Padrão)":
             questoes_filtradas = questoes_filtradas[questoes_filtradas['banca'] == banca_selecionada]
 
@@ -237,9 +250,9 @@ def iniciar_simulado():
             ids_na_sessao.append(int(index))
 
         session['simulado_ids'] = ids_na_sessao
-        session['simulado_respostas'] = {} 
+        session['simulado_respostas'] = {}
         session['indice_atual'] = 0
-        session['tipo_simulado'] = 'normal' # (NOVO)
+        session['tipo_simulado'] = 'normal'
         
         primeira_questao = questoes_prontas[0]
         
@@ -257,6 +270,7 @@ def iniciar_simulado():
 
 @app.route('/api/simulado/questao/<int:indice>')
 def get_questao(indice):
+    # Esta rota usa Pandas + Sessão, inalterada
     questoes_ids = session.get('simulado_ids')
     if not questoes_ids:
         return jsonify({"success": False, "error": "Simulado não encontrado na sessão."}), 404
@@ -304,6 +318,9 @@ def get_questao(indice):
     else:
         return jsonify({"success": False, "error": "Índice da questão fora dos limites."}), 404
 
+# ---
+# --- (ALTERADO) API DO SIMULADO (Rotas com Banco de Dados) ---
+# ---
 @app.route('/api/simulado/responder', methods=['POST'])
 def responder_questao():
     data = request.json
@@ -328,13 +345,18 @@ def responder_questao():
         }
         session['simulado_respostas'] = respostas
         
-        # (NOVO E CRÍTICO) - Salva no banco de dados para revisão
+        # (ALTERADO) Salva no banco de dados com SQLAlchemy
         try:
-            db = get_db()
-            db.execute('INSERT INTO respostas_usuarios (usuario_id, questao_id, acertou, disciplina) VALUES (1, ?, ?, ?)',
-                       (int(questao_id), acertou, row.get('disciplina')))
-            db.commit()
+            nova_resposta = RespostasUsuarios(
+                usuario_id=1, # Fixo por enquanto
+                questao_id=int(questao_id),
+                acertou=acertou,
+                disciplina=row.get('disciplina')
+            )
+            db.session.add(nova_resposta)
+            db.session.commit()
         except Exception as e_db:
+            db.session.rollback() # Desfaz em caso de erro
             print(f"Erro ao salvar resposta no BD: {e_db}")
             # Não falha a requisição, mas loga o erro
 
@@ -361,6 +383,7 @@ def finalizar_simulado():
     desempenho_disciplina = defaultdict(lambda: {'acertos': 0, 'total': 0})
 
     try:
+        # 1. Calcula acertos (lógica inalterada)
         for questao_id in questoes_ids:
             resposta = respostas.get(str(questao_id))
             if resposta:
@@ -372,54 +395,60 @@ def finalizar_simulado():
         
         percentual_acerto = round((total_acertos / total_questoes) * 100, 1) if total_questoes > 0 else 0
         
-        # (NOVO E CRÍTICO) - Salva o resultado no banco
+        # (ALTERADO) Salva o resultado no banco com SQLAlchemy
         try:
-            db = get_db()
-            # 1. Salva o resultado geral
-            db.execute(
-                'INSERT INTO resultados_simulados (usuario_id, total_questoes, total_acertos, percentual_acerto, tipo_simulado) VALUES (1, ?, ?, ?, ?)',
-                (total_questoes, total_acertos, percentual_acerto, tipo_simulado)
+            # 2. Salva o resultado geral
+            novo_resultado = ResultadosSimulados(
+                usuario_id=1,
+                total_questoes=total_questoes,
+                total_acertos=total_acertos,
+                percentual_acerto=percentual_acerto,
+                tipo_simulado=tipo_simulado
             )
+            db.session.add(novo_resultado)
             
-            # 2. Atualiza o desempenho por área
+            # 3. Atualiza o desempenho por área
             for disciplina, stats in desempenho_disciplina.items():
-                db.execute(
-                    '''INSERT INTO desempenho_areas (usuario_id, area, total_questoes, total_acertos)
-                       VALUES (1, ?, ?, ?)
-                       ON CONFLICT(usuario_id, area) DO UPDATE SET
-                       total_questoes = total_questoes + excluded.total_questoes,
-                       total_acertos = total_acertos + excluded.total_acertos;''',
-                    (disciplina, stats['total'], stats['acertos'])
-                )
+                area_existente = DesempenhoAreas.query.filter_by(usuario_id=1, area=disciplina).first()
+                
+                if area_existente:
+                    area_existente.total_questoes += stats['total']
+                    area_existente.total_acertos += stats['acertos']
+                else:
+                    area_existente = DesempenhoAreas(
+                        usuario_id=1,
+                        area=disciplina,
+                        total_questoes=stats['total'],
+                        total_acertos=stats['acertos']
+                    )
+                    db.session.add(area_existente)
+                
+                # Recalcula percentual da área
+                if area_existente.total_questoes > 0:
+                    area_existente.percentual_acerto = round((area_existente.total_acertos / area_existente.total_questoes) * 100, 1)
             
-            # 3. Recalcula percentuais de desempenho (pode ser otimizado)
-            db.execute(
-                '''UPDATE desempenho_areas
-                   SET percentual_acerto = ROUND((CAST(total_acertos AS REAL) / total_questoes) * 100, 1)
-                   WHERE usuario_id = 1;'''
-            )
+            # 4. Atualiza metas (simples)
+            # (Otimizado: faz updates diretos sem SELECT primeiro)
+            db.session.query(MetasUsuarios).filter_by(
+                usuario_id=1, tipo_meta='simulados_realizados', concluida=False
+            ).update({'valor_atual': MetasUsuarios.valor_atual + 1})
             
-            # 4. Atualiza metas (simples, por enquanto)
-            db.execute(
-                '''UPDATE metas_usuarios SET valor_atual = valor_atual + 1
-                   WHERE usuario_id = 1 AND tipo_meta = 'simulados_realizados' AND concluida = 0;'''
-            )
-            db.execute(
-                '''UPDATE metas_usuarios SET valor_atual = valor_atual + ?
-                   WHERE usuario_id = 1 AND tipo_meta = 'questoes_resolvidas' AND concluida = 0;''', (total_questoes,)
-            )
-            
-            # Atualiza meta de percentual (usa a média geral)
-            cursor_avg = db.execute('SELECT AVG(percentual_acerto) as media FROM resultados_simulados WHERE usuario_id = 1')
-            media_geral = cursor_avg.fetchone()['media'] or 0
-            
-            db.execute(
-                '''UPDATE metas_usuarios SET valor_atual = ?
-                   WHERE usuario_id = 1 AND tipo_meta = 'percentual_acerto' AND concluida = 0;''', (round(media_geral, 1),)
-            )
+            db.session.query(MetasUsuarios).filter_by(
+                usuario_id=1, tipo_meta='questoes_resolvidas', concluida=False
+            ).update({'valor_atual': MetasUsuarios.valor_atual + total_questoes})
 
-            db.commit()
+            # Para a média, precisamos calcular primeiro
+            media_geral_query = db.session.query(func.avg(ResultadosSimulados.percentual_acerto)).filter_by(usuario_id=1).scalar()
+            media_geral = round(media_geral_query or 0, 1)
+            
+            db.session.query(MetasUsuarios).filter_by(
+                usuario_id=1, tipo_meta='percentual_acerto', concluida=False
+            ).update({'valor_atual': media_geral})
+
+            db.session.commit()
+        
         except Exception as e_db:
+            db.session.rollback()
             print(f"Erro ao salvar resultado final no BD: {e_db}")
             # Não falha a requisição, mas loga o erro
 
@@ -427,6 +456,7 @@ def finalizar_simulado():
         print(f"Erro ao calcular resultado: {e}")
         return jsonify({"success": False, "error": f"Erro ao calcular dados: {e}"}), 500
 
+    # Limpa a sessão (inalterado)
     session.pop('simulado_ids', None)
     session.pop('simulado_respostas', None)
     session.pop('indice_atual', None)
@@ -443,37 +473,30 @@ def finalizar_simulado():
     })
 
 # ============================================================================
-# 🎯 DASHBOARD SIMPLIFICADO - FOCADO EM METAS (NOVO)
+# 🎯 (ALTERADO) DASHBOARD SIMPLIFICADO - FOCADO EM METAS
 # ============================================================================
 @app.route('/api/dashboard/simplificado')
 def get_dashboard_simplificado():
     try:
-        conn = get_db()
-        cursor = conn.cursor()
+        # (ALTERADO) O SQLAlchemy cuida da conexão/cursor e do fechamento
         
         # Métricas principais (usando 1 como ID de usuário fixo)
-        cursor.execute('SELECT COUNT(*) as total FROM resultados_simulados WHERE usuario_id = 1')
-        total_simulados = cursor.fetchone()['total'] or 0
+        total_simulados = db.session.query(ResultadosSimulados).filter_by(usuario_id=1).count()
         
-        cursor.execute('SELECT AVG(percentual_acerto) as media FROM resultados_simulados WHERE usuario_id = 1')
-        media_geral = cursor.fetchone()['media'] or 0
+        media_geral_query = db.session.query(func.avg(ResultadosSimulados.percentual_acerto)).filter_by(usuario_id=1).scalar()
+        media_geral = media_geral_query or 0
         
-        cursor.execute('SELECT SUM(total_acertos) as total FROM resultados_simulados WHERE usuario_id = 1')  
-        total_acertos = cursor.fetchone()['total'] or 0
+        total_acertos_query = db.session.query(func.sum(ResultadosSimulados.total_acertos)).filter_by(usuario_id=1).scalar()
+        total_acertos = total_acertos_query or 0
         
-        # Progresso geral (ex: 80% de média = 80% do progresso)
         progresso_geral = min(100, round(media_geral, 1))
         
         # Metas ativas
-        cursor.execute('SELECT tipo_meta, valor_meta, valor_atual FROM metas_usuarios WHERE usuario_id = 1 AND concluida = 0 LIMIT 3')
-        metas = cursor.fetchall()
+        metas = MetasUsuarios.query.filter_by(usuario_id=1, concluida=False).limit(3).all()
         
         # Áreas de destaque
-        cursor.execute('SELECT area, percentual_acerto FROM desempenho_areas WHERE usuario_id = 1 ORDER BY percentual_acerto DESC LIMIT 3')
-        areas = cursor.fetchall()
-        
-        conn.close()
-        
+        areas = DesempenhoAreas.query.filter_by(usuario_id=1).order_by(DesempenhoAreas.percentual_acerto.desc()).limit(3).all()
+                
         return jsonify({
             "success": True,
             "metricas": {
@@ -484,66 +507,70 @@ def get_dashboard_simplificado():
             },
             "metas": [
                 {
-                    "tipo": meta['tipo_meta'],
-                    "valor_meta": meta['valor_meta'],
-                    "valor_atual": meta['valor_atual'],
-                    "progresso": min(100, (meta['valor_atual'] / meta['valor_meta']) * 100) if meta['valor_meta'] > 0 else 0
+                    "tipo": meta.tipo_meta,
+                    "valor_meta": meta.valor_meta,
+                    "valor_atual": meta.valor_atual,
+                    "progresso": min(100, (meta.valor_atual / meta.valor_meta) * 100) if meta.valor_meta > 0 else 0
                 } for meta in metas
             ],
             "areas_destaque": [
                 {
-                    "area": area['area'],
-                    "percentual": area['percentual_acerto'] or 0
+                    "area": area.area,
+                    "percentual": area.percentual_acerto or 0
                 } for area in areas
             ]
         })
         
     except Exception as e:
         print(f"Erro no Dashboard: {e}")
+        # db.session.rollback() # Não necessário para SELECTs
         return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/api/dashboard/criar-meta', methods=['POST'])
 def criar_meta():
     try:
         data = request.json
-        conn = get_db()
-        cursor = conn.cursor()
         
-        # Simples, apenas insere. O valor_atual será atualizado pelos simulados.
-        cursor.execute('INSERT INTO metas_usuarios (usuario_id, tipo_meta, valor_meta, valor_atual) VALUES (1, ?, ?, 0)', 
-                     (data['tipo'], data['valor_meta']))
-        conn.commit()
-        conn.close()
+        # (ALTERADO) Cria o objeto Meta e adiciona
+        nova_meta = MetasUsuarios(
+            usuario_id=1,
+            tipo_meta=data['tipo'],
+            valor_meta=float(data['valor_meta']),
+            valor_atual=0
+        )
+        db.session.add(nova_meta)
+        db.session.commit()
         
         return jsonify({"success": True, "message": "Meta criada com sucesso!"})
         
     except Exception as e:
+        db.session.rollback()
         return jsonify({"success": False, "error": str(e)}), 500
 
 # ============================================================================
-# 🔄 SISTEMA DE REVISÃO ESPAÇADA (NOVO)
+# 🔄 (ALTERADO) SISTEMA DE REVISÃO ESPAÇADA
 # ============================================================================
 @app.route('/api/simulado/revisao-espacada', methods=['POST'])
 def iniciar_revisao_espacada():
     try:
-        conn = get_db()
-        cursor = conn.cursor()
+        # (ALTERADO) Pega 10 questões que o usuário errou
+        # NOTA: func.random() funciona no SQLite e PostgreSQL.
+        query = db.session.query(RespostasUsuarios.questao_id).filter_by(
+            usuario_id=1, 
+            acertou=False
+        ).order_by(func.random()).limit(10)
         
-        # Pega 10 questões que o usuário errou (acertou = 0)
-        cursor.execute('SELECT questao_id FROM respostas_usuarios WHERE usuario_id = 1 AND acertou = 0 ORDER BY RANDOM() LIMIT 10')
-        questao_ids = [row['questao_id'] for row in cursor.fetchall()]
-        conn.close()
+        questao_ids = [row.questao_id for row in query.all()]
         
         if not questao_ids:
             return jsonify({"success": False, "error": "Nenhuma questão para revisão encontrada. Você acertou tudo!"}), 404
         
-        # Usar questões do banco (DataFrame) existente
+        # O resto da lógica usa Pandas, inalterado
         questoes_revisao = df_questoes.loc[df_questoes.index.isin(questao_ids)]
         
         if questoes_revisao.empty:
             return jsonify({"success": False, "error": "Questões não encontradas no banco de dados CSV."}), 404
         
-        # Preparar questões
         questoes_formatadas = []
         ids_na_sessao = []
         for index, row in questoes_revisao.iterrows():
@@ -572,7 +599,7 @@ def iniciar_revisao_espacada():
         session['simulado_ids'] = ids_na_sessao
         session['simulado_respostas'] = {}
         session['indice_atual'] = 0
-        session['tipo_simulado'] = 'revisao_espacada' # (NOVO)
+        session['tipo_simulado'] = 'revisao_espacada'
         
         return jsonify({
             "success": True,
@@ -585,9 +612,10 @@ def iniciar_revisao_espacada():
         return jsonify({"success": False, "error": str(e)}), 500
 
 # ============================================================================
-# 📝 SISTEMA DE REDAÇÃO MELHORADO (AGORA COM +40 TEMAS)
+# 📝 SISTEMA DE REDAÇÃO (Inalterado, não usa banco de dados)
 # ============================================================================
 
+# (LISTA COMPLETA INCLUÍDA)
 TEMAS_REDACAO_MELHORADOS = [
     {
         "id": 1,
@@ -794,7 +822,7 @@ TEMAS_REDACAO_MELHORADOS = [
         "titulo": "A importância da doação de órgãos no Brasil",
         "enunciado": "Redija um texto dissertativo-argumentativo sobre 'A importância da doação de órgãos no Brasil: desafios culturais e logísticos'.",
         "textos_base": [
-            "Texto 1: 'Mais de 60 mil pessoas aguardam na fila por um transplante de órgão no Brasil. Muitas morrem antes de conseguir. O país possui um dos maiores programas públicos de transplantes do mundo, mas o principal gargalo é a falta de doadores.' (Fonte: Ministério da Saúde)",
+            "Texto 1: 'Mais de 60 mil pessoas aguardam na fila por um transplante de órgão no Brasil. Muitas morrem antes de conseguir. O país possui um dos maiores programas públicos de transplantes do mundo, mas o principal gargalo é η falta de doadores.' (Fonte: Ministério da Saúde)",
             "Texto 2: 'No Brasil, a doação de órgãos só ocorre com autorização familiar (doação consentida), mesmo que o falecido tenha expressado o desejo em vida. A falta de diálogo sobre o tema em vida leva a altas taxas de recusa familiar (cerca de 40%).'",
             "Texto 3: 'Além da recusa, há desafios logísticos. O diagnóstico de morte encefálica precisa ser rápido e preciso, e o órgão captado precisa ser transportado (muitas vezes por via aérea) e transplantado em poucas horas, exigindo uma estrutura complexa do SUS.'"
         ]
@@ -875,7 +903,7 @@ TEMAS_REDACAO_MELHORADOS = [
         "enunciado": "Elabore um texto dissertativo-argumentativo sobre 'A questão da população em situação de rua nos centros urbanos brasileiros', analisando as causas estruturais e as políticas de acolhimento.",
         "textos_base": [
             "Texto 1: 'O número de pessoas em situação de rua no Brasil cresceu exponencialmente nos últimos anos, impulsionado pelo desemprego estrutural, crise habitacional (preço dos aluguéis) e problemas de saúde mental e dependência química.' (Fonte: IPEA)",
-            "Texto 2: 'A sociedade muitas vezes adota uma postura de 'aporofobia' (aversão aos pobres), tratando a população de rua como um caso de 'polícia' (higienização urbana) e não como um problema de 'assistência social' e 'saúde pública'.'",
+            "Texto 2: 'A sociedade muitas vezes adota uma postura de 'aporofobia' (aversão aos pobres), tratando η população de rua como um caso de 'polícia' (higienização urbana) e não como um problema de 'assistência social' e 'saúde pública'.'",
             "Texto 3: 'Políticas de 'Housing First' (Moradia Primeiro), adotadas em vários países, mostram-se mais eficientes que abrigos temporários. Ao garantir uma moradia digna primeiro, o indivíduo consegue estabilidade para tratar a saúde e buscar reinserção no mercado de trabalho.'"
         ]
     },
@@ -1157,4 +1185,6 @@ def get_estatisticas_areas_antigo():
 
 # --- FIM DO ARQUIVO ---
 if __name__ == '__main__':
+    # (NOVO) O app.run() agora só é usado para testes locais
+    # O Gunicorn (servidor de produção) será usado pelo Render
     app.run(debug=True)
