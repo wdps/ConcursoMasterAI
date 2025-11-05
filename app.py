@@ -1143,7 +1143,7 @@ def corrigir_redacao_gemini_real():
             }}
             '''
             
-            model = genai.GenerativeModel('gemini-pro')
+            model = genai.GenerativeModel('gemini-1.5-pro-latest')
             response = model.generate_content(prompt)
             
             # Limpa a resposta do Gemini para garantir que é um JSON
