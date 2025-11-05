@@ -1148,7 +1148,7 @@ def corrigir_redacao_gemini_real():
             
             # --- (CORREÇÃO 1) Modelo do Gemini ---
             # O modelo 'gemini-1.5-pro-latest' falhou no log. Mudando para o '1.0-pro'.
-            model = genai.GenerativeModel('models/gemini-pro-latest')
+            model = genai.GenerativeModel('models/gemini-flash-latest')
             # --- FIM DA CORREÇÃO 1 ---
 
             response = model.generate_content(prompt)
