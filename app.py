@@ -170,26 +170,25 @@ def get_areas():
         print(f"ERRO em /api/areas: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
 
+# ---
+# --- (CORREÇÃO 1) Rota /api/bancas ---
+# ---
 @app.route('/api/bancas')
 def get_bancas():
-    # Esta rota não usa o banco de dados, inalterada
+    # Esta rota foi modificada para não ler a coluna 'banca', que não existe no seu CSV.
     try:
         if df_questoes.empty:
              return jsonify({"success": False, "error": "Banco de questões não carregado"}), 500
         
-        contagem_bancas = df_questoes['Banca_Organizadora'].value_counts().to_dict()
-        bancas_reais = []
+        # (CORREÇÃO) Remove a leitura da coluna 'banca' que não existe no CSV.
+        # Retorna APENAS a banca padrão.
+        bancas_reais = [{"banca": "(Banca Padrão)", "total_questoes": len(df_questoes)}]
         
-        bancas_reais.append({"banca": "(Banca Padrão)", "total_questoes": len(df_questoes)})
-        
-        for banca, total in contagem_bancas.items():
-            if banca and banca != "(Banca Padrão)": # Ignora bancas vazias
-                bancas_reais.append({"banca": banca, "total_questoes": total})
-
         return jsonify({"success": True, "bancas": bancas_reais})
     except Exception as e:
         print(f"ERRO em /api/bancas: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
+# --- FIM DA CORREÇÃO 1 ---
 
 # ---
 # --- API DO SIMULADO (Rotas de Sessão Inalteradas) ---
@@ -197,7 +196,7 @@ def get_bancas():
 
 @app.route('/api/simulado/iniciar', methods=['POST'])
 def iniciar_simulado():
-    # Esta rota usa Pandas + Sessão, inalterada
+    # Esta rota usa Pandas + Sessão
     try:
         data = request.json
         areas_selecionadas = data.get('areas', [])
@@ -209,8 +208,11 @@ def iniciar_simulado():
 
         questoes_filtradas = df_questoes[df_questoes['disciplina'].isin(areas_selecionadas)]
         
-        if banca_selecionada and banca_selecionada != "(Banca Padrão)":
-            questoes_filtradas = questoes_filtradas[questoes_filtradas['banca'] == banca_selecionada]
+        # --- (CORREÇÃO 1 - Parte B) ---
+        # A linha abaixo foi comentada pois a coluna 'banca' não existe no seu CSV.
+        # if banca_selecionada and banca_selecionada != "(Banca Padrão)":
+        #     questoes_filtradas = questoes_filtradas[questoes_filtradas['banca'] == banca_selecionada]
+        # --- FIM DA CORREÇÃO 1 - Parte B ---
 
         if questoes_filtradas.empty:
             return jsonify({"success": False, "error": "Nenhuma questão encontrada para os filtros selecionados."}), 404
@@ -673,7 +675,7 @@ TEMAS_REDACAO_MELHORADOS = [
         "enunciado": "Redija um texto dissertativo-argumentativo sobre o tema 'Democratização do acesso à internet e o combate à exclusão digital no Brasil', abordando suas causas, consequências e propondo soluções.",
         "textos_base": [
             "Texto 1: 'Cerca de 28 milhões de brasileiros não têm acesso à internet, segundo a pesquisa TIC Domicílios 2023. Nas áreas rurais, esse percentual é significativamente maior, chegando a 45% dos domicílios.' (Fonte: Cetic.br)",
-            "Texto 2: 'A exclusão digital não é apenas a falta de conexão; é também a falta de equipamentos adequados (computadores vs. apenas celular) e de letramento digital (saber usar as ferramentas de forma crítica e segura).'",
+            "Texto 2: 'A exclusão digital não છે apenas a falta de conexão; é também a falta de equipamentos adequados (computadores vs. apenas celular) e de letramento digital (saber usar as ferramentas de forma crítica e segura).'",
             "Texto 3: 'Durante a pandemia, o acesso à educação, saúde (telemedicina) e auxílios governamentais (Auxílio Emergencial) dependeu diretamente da conectividade, transformando a internet em um serviço essencial e um direito de cidadania.' (Fonte: Relatório PNAD COVID-19)"
         ]
     },
@@ -970,7 +972,7 @@ TEMAS_REDACAO_MELHORADOS = [
     {
         "id": 36,
         "titulo": "O endividamento das famílias brasileiras e a educação financeira",
-        "enunciado": "Redija um texto dissertativo-argumentativo sobre 'O endividamento das famílias brasileiras e o papel da educação financeira'.",
+        "enunciado": "Redija um texto dissertativo-argumentativo sobre 'O endividamento das families brasileiras e o papel da educação financeira'.",
         "textos_base": [
             "Texto 1: 'Mais de 70% das famílias brasileiras estão endividadas (com cartão de crédito, cheque especial, financiamentos), e cerca de 30% estão inadimplentes (contas em atraso). O 'superendividamento' tornou-se um problema social grave.' (Fonte: Confederação Nacional do Comércio - CNC)",
             "Texto 2: 'As causas são múltiplas: a precarização do trabalho (baixa renda), a inflação (que corrói o poder de compra) e a facilidade de acesso ao crédito 'fácil' (com juros abusivos), especialmente o rotativo do cartão de crédito, um dos mais altos do mundo.'",
@@ -1188,3 +1190,5 @@ if __name__ == '__main__':
     # (NOVO) O app.run() agora só é usado para testes locais
     # O Gunicorn (servidor de produção) será usado pelo Render
     app.run(debug=True)
+}
+me envie um novo app completo com a correcao dos dois problemas detectados !!
