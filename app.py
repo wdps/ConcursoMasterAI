@@ -177,7 +177,7 @@ def get_bancas():
         if df_questoes.empty:
              return jsonify({"success": False, "error": "Banco de questões não carregado"}), 500
         
-        contagem_bancas = df_questoes['banca'].value_counts().to_dict()
+        contagem_bancas = df_questoes['Banca_Organizadora'].value_counts().to_dict()
         bancas_reais = []
         
         bancas_reais.append({"banca": "(Banca Padrão)", "total_questoes": len(df_questoes)})
