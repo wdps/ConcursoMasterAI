@@ -49,17 +49,16 @@ except Exception as e:
 # --- FIM DA FONTE DE DADOS ---
 
 # ---
-# --- MAPA DE ÁREAS (Usado pela API /api/areas - Inalterado) ---
+# --- (ATUALIZADO) MAPA DE ÁREAS ---
 # ---
 MAPA_AREAS = {
     "Língua Portuguesa": ["Língua Portuguesa"],
-    "Exatas e Raciocínio Lógico": ["Matemática", "Raciocínio Lógico", "Matemática Financeira"],
-    "Conhecimentos Jurídicos": ["Direito Administrativo", "Direito Constitucional"],
-    "Conhecimentos Bancários e Vendas": ["Conhecimentos Bancários", "Vendas e Negociação", "Atualidades do Mercado Financeiro"],
-    "Psicologia Clínica e Saúde": ["Psicologia", "Psicologia (Saúde)"],
-    "Gestão de Pessoas": ["Psicologia (Gestão)"],
-    "Informática": ["Informática"],
-    "Atualidades Gerais": ["Atualidades"]
+    "Exatas e Raciocínio Lógico": ["Matemática", "Raciocínio Lógico", "Matemática Financeira", "Raciocínio Lógico Matemático"],
+    "Direito e Legislação": ["Direito Administrativo", "Direito Constitucional", "Noções de Direito", "Legislação Específica do Simae/sc", "Legislação"],
+    "Conhecimentos Bancários": ["Conhecimentos Bancários", "Vendas e Negociação", "Atualidades do Mercado Financeiro"],
+    "Psicologia e RH": ["Psicologia", "Psicologia (Saúde)", "Psicologia (Gestão)", "Gestão de Pessoas", "Psicologia Organizacional e do Trabalho", "Conhecimentos Específicos"],
+    "Informática": ["Informática", "Noções de Informática"],
+    "Atualidades Gerais": ["Atualidades", "História e Geografia de Goiás"]
 }
 
 # ---
@@ -171,28 +170,42 @@ def get_areas():
         return jsonify({"success": False, "error": str(e)}), 500
 
 # ---
-# --- (CORREÇÃO 2 - PARTE A) Rota /api/bancas ---
+# --- (MUDANÇA) Rota /api/bancas REATIVADA ---
 # ---
 @app.route('/api/bancas')
 def get_bancas():
-    # Esta rota foi modificada para não ler a coluna 'banca', que não existe no seu CSV.
+    # Esta rota agora lê a coluna 'banca' do 'questoes.csv' unificado.
     try:
         if df_questoes.empty:
              return jsonify({"success": False, "error": "Banco de questões não carregado"}), 500
         
-        # (CORREÇÃO) Remove a leitura da coluna 'banca'/'Banca_Organizadora' que não existe.
-        # Retorna APENAS a banca padrão.
-        bancas_reais = [{"banca": "(Banca Padrão)", "total_questoes": len(df_questoes)}]
+        # (REATIVADO) Lê a coluna 'banca'
+        contagem_bancas = df_questoes['banca'].value_counts().to_dict()
+        bancas_reais = []
         
+        # (REATIVADO) Adiciona a "Banca Padrão" primeiro, se ela existir
+        if "Banca Padrão" in contagem_bancas:
+             bancas_reais.append({"banca": "Banca Padrão", "total_questoes": contagem_bancas["Banca Padrão"]})
+             del contagem_bancas["Banca Padrão"] # Remove para não duplicar
+        
+        # (REATIVADO) Adiciona as outras bancas (FGV, Cebraspe, etc.)
+        for banca, total in contagem_bancas.items():
+            if banca: # Ignora bancas vazias
+                bancas_reais.append({"banca": banca, "total_questoes": total})
+
         return jsonify({"success": True, "bancas": bancas_reais})
+    except KeyError:
+        # Erro caso a coluna 'banca' ainda esteja faltando no CSV
+        print("ERRO em /api/bancas: A coluna 'banca' não foi encontrada no 'questoes.csv'.")
+        return jsonify({"success": False, "error": "Erro de configuração: coluna 'banca' ausente."}), 500
     except Exception as e:
         print(f"ERRO em /api/bancas: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
-# --- FIM DA CORREÇÃO 2 - PARTE A ---
+# --- FIM DA MUDANÇA ---
 
 
 # ---
-# --- API DO SIMULADO (Rotas de Sessão Inalteradas) ---
+# --- API DO SIMULADO ---
 # ---
 
 @app.route('/api/simulado/iniciar', methods=['POST'])
@@ -209,11 +222,11 @@ def iniciar_simulado():
 
         questoes_filtradas = df_questoes[df_questoes['disciplina'].isin(areas_selecionadas)]
         
-        # --- (CORREÇÃO 2 - PARTE B) ---
-        # A linha abaixo foi comentada pois a coluna 'banca' não existe no seu CSV.
-        # if banca_selecionada and banca_selecionada != "(Banca Padrão)":
-        #     questoes_filtradas = questoes_filtradas[questoes_filtradas['banca'] == banca_selecionada]
-        # --- FIM DA CORREÇÃO 2 - PARTE B ---
+        # --- (MUDANÇA) Filtro de Banca REATIVADO ---
+        # Agora que o CSV está corrigido, este filtro volta a funcionar.
+        if banca_selecionada and banca_selecionada != "(Banca Padrão)":
+            questoes_filtradas = questoes_filtradas[questoes_filtradas['banca'] == banca_selecionada]
+        # --- FIM DA MUDANÇA ---
 
         if questoes_filtradas.empty:
             return jsonify({"success": False, "error": "Nenhuma questão encontrada para os filtros selecionados."}), 404
@@ -1195,3 +1208,5 @@ if __name__ == '__main__':
     # (NOVO) O app.run() agora só é usado para testes locais
     # O Gunicorn (servidor de produção) será usado pelo Render
     app.run(debug=True)
+}
+MEU ARQUIVO ATUAL É ESSE ENTAO ATUALIZE-O
