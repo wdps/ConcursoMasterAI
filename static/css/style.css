@@ -1199,3 +1199,136 @@ textarea#texto-redacao {
     .metricas-principais { grid-template-columns: 1fr; }
     .areas-grid-inteligente { grid-template-columns: 1fr; }
 }
+
+/* ============================================================================
+   (NOVO) CONTROLES DO SIMULADO (Cronômetro, Fonte, Foco)
+   ============================================================================ */
+
+.simulado-controls-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 20px;
+    border-bottom: 1px solid var(--border-light);
+    background: var(--background-light);
+    /* Gruda no topo do card */
+    margin: -30px -30px 20px -30px; 
+    padding-left: 30px;
+    padding-right: 30px;
+    border-top-left-radius: 15px;
+    border-top-right-radius: 15px;
+}
+
+.cronometro-container {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 1.2em;
+    font-weight: 500;
+    color: var(--secondary-color);
+}
+
+.cronometro-icon {
+    font-size: 1.4em;
+}
+
+#cronometro-display {
+    font-family: 'Courier New', Courier, monospace;
+    font-weight: bold;
+}
+
+.simulado-tools {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.font-controls {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    border: 1px solid var(--border-color);
+    border-radius: 50px;
+    padding: 2px;
+    background: white;
+}
+
+.font-label {
+    font-size: 0.8em;
+    color: var(--text-light);
+    margin-left: 10px;
+    margin-right: 5px;
+    white-space: nowrap;
+}
+
+.btn-font-control {
+    font-family: "Arial Black", Gadget, sans-serif;
+    font-size: 1em;
+    font-weight: 900;
+    padding: 0px 10px;
+    border: none;
+    background: transparent;
+    color: var(--primary-dark);
+    cursor: pointer;
+    border-radius: 50px;
+    line-height: 1.5;
+    transition: all 0.2s ease;
+}
+
+.btn-font-control:hover {
+    background: var(--primary-color);
+    color: white;
+}
+
+#btn-focus-mode {
+    border: 1px solid var(--border-color);
+    background: white;
+    padding: 2px 8px;
+}
+
+#btn-focus-mode:hover {
+     background: var(--primary-dark);
+     border-color: var(--primary-dark);
+     color: white;
+}
+
+/* O conteúdo que receberá o zoom */
+#simulado-content-zoomavel {
+    transition: font-size 0.2s ease-in-out;
+}
+
+/* --- Estilos do Modo Foco --- */
+body.focus-mode .header {
+    display: none;
+}
+
+/* Remove padding do body no modo foco */
+body.focus-mode .tela {
+    padding: 0;
+    margin: 0;
+}
+
+/* Faz o container usar 100% da tela */
+body.focus-mode .container {
+     max-width: 100%;
+     padding: 0;
+     margin: 0;
+}
+
+/* Faz o card da questão ocupar 100% da tela */
+body.focus-mode .card.questao-container {
+    border-radius: 0;
+    border: none;
+    box-shadow: none;
+    margin: 0;
+    min-height: 100vh;
+}
+
+/* Faz a barra de controles grudar 100% no topo */
+body.focus-mode .simulado-controls-bar {
+    border-radius: 0;
+    margin-left: 0;
+    margin-right: 0;
+    padding-left: 20px;
+    padding-right: 20px;
+}

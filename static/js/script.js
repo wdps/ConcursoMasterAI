@@ -1,6 +1,7 @@
 ﻿// CONCURSOIA - Sistema Inteligente de Estudos (v4.0 - CORRIGIDO)
 let simuladoAtual = null;
 let questaoAtual = null;
+let simuladoTimerInterval = null; // (NOVO) Variável global do cronômetro
 
 // Sistema de Cache Local
 const SessionManager = {
@@ -131,16 +132,31 @@ function navegarPara(tela) {
 
     // Lógica de carregamento de conteúdo específico da tela
     if (tela === "tela-simulado") {
+        // (INÍCIO DA ALTERAÇÃO) - Lógica de navegação do simulado
         const selecaoContainer = document.getElementById("selecao-simulado");
         const simuladoAtivoContainer = document.getElementById("simulado-ativo");
         const resultado = document.getElementById("tela-resultado");
+        
+        // Verifica se há um simulado ativo na sessão
+        const simuladoIDs = SessionManager.get('simulado_ids');
+        
+        if (simuladoIDs && simuladoIDs.length > 0) {
+            // Se sim, mostre o simulado ativo e esconda o resto
+            if (selecaoContainer) selecaoContainer.classList.add("hidden");
+            if (simuladoAtivoContainer) simuladoAtivoContainer.classList.remove("hidden");
+            if (resultado) resultado.classList.add("hidden");
+            iniciarCronometro(); // Retoma o cronômetro ao voltar para a aba
+        } else {
+            // Se não, mostre a seleção (comportamento padrão)
+            if (selecaoContainer) selecaoContainer.classList.remove("hidden");
+            if (simuladoAtivoContainer) simuladoAtivoContainer.classList.add("hidden");
+            if (resultado) resultado.classList.add("hidden");
+            carregarAreas();
+            carregarBancas();
+            pararCronometro(); // Garante que qualquer timer órfão seja limpo
+        }
+        // (FIM DA ALTERAÇÃO)
 
-        if (selecaoContainer) selecaoContainer.classList.remove("hidden");
-        if (simuladoAtivoContainer) simuladoAtivoContainer.classList.add("hidden");
-        if (resultado) resultado.classList.add("hidden");
-
-        carregarAreas();
-        carregarBancas();
     } else if (tela === "tela-redacao") {
         // (ALTERADO) - Carrega os temas melhorados
         // carregarTemasRedacao(); // Antigo
@@ -177,6 +193,10 @@ function iniciarSimulado() {
          simuladoAtivoContainer.innerHTML = '<div class="card"><div class="text-center"><div class="loading"></div><p>Preparando seu simulado...</p></div></div>';
     }
 
+    // (NOVO) Limpa o cronômetro antigo antes de buscar um novo
+    pararCronometro();
+    SessionManager.remove('simuladoStartTime');
+
     fetch("/api/simulado/iniciar", {
         method: "POST",
         headers: {
@@ -207,6 +227,9 @@ function iniciarSimulado() {
             
             mostrarTelaSimuladoAtivo(data.total_questoes);
             exibirQuestao(data.questao, data.indice_atual, data.total_questoes, data.resposta_anterior);
+            
+            // (NOVO) Inicia o cronômetro
+            iniciarCronometro();
         } else {
             alert("Erro ao iniciar simulado: " + (data.error || "Nenhuma questão encontrada."));
             if (selecaoContainer) selecaoContainer.classList.remove("hidden");
@@ -229,8 +252,29 @@ function mostrarTelaSimuladoAtivo(totalQuestoes) {
     if (selecaoContainer) selecaoContainer.classList.add("hidden");
     if (simuladoAtivoContainer) {
         simuladoAtivoContainer.classList.remove("hidden");
+        
+        // (INÍCIO DA ALTERAÇÃO) - HTML atualizado com as novas features
         simuladoAtivoContainer.innerHTML = 
         `<div class="card questao-container">
+            
+            <div class="simulado-controls-bar">
+                <div class="cronometro-container">
+                    <span class="cronometro-icon">⏱️</span>
+                    <span id="cronometro-display">00:00:00</span>
+                </div>
+                
+                <div class="simulado-tools">
+                    <div class="font-controls">
+                        <span class="font-label">Fonte:</span>
+                        <button id="btn-font-decrease" class="btn-font-control" title="Diminuir Fonte">A-</button>
+                        <button id="btn-font-increase" class="btn-font-control" title="Aumentar Fonte">A+</button>
+                    </div>
+                    <button id="btn-focus-mode" class="btn-font-control" title="Modo Foco">
+                        <span id="focus-icon-expand">⛶</span>
+                        <span id="focus-icon-compress" class="hidden">↘</span>
+                    </button>
+                </div>
+            </div>
             <div class="questao-header">
                 <div>
                     <h3 id="questao-numero">Questão 1 de ${totalQuestoes}</h3>
@@ -244,16 +288,19 @@ function mostrarTelaSimuladoAtivo(totalQuestoes) {
             <div class="progresso-container">
                 <div id="progresso-simulado" class="progresso-bar"></div>
             </div>
-            <div class="questao-content-wrapper">
-                <div class="questao-enunciado-container">
-                    <div class="questao-enunciado" id="questao-enunciado">Carregando questão...</div>
+
+            <div id="simulado-content-zoomavel">
+                <div class="questao-content-wrapper">
+                    <div class="questao-enunciado-container">
+                        <div class="questao-enunciado" id="questao-enunciado">Carregando questão...</div>
+                    </div>
+                    <div class="questao-auxiliar" id="questao-auxiliar">
+                        <div class="auxiliar-vazio">Nenhuma informação auxiliar para esta questão.</div>
+                    </div>
                 </div>
-                <div class="questao-auxiliar" id="questao-auxiliar">
-                    <div class="auxiliar-vazio">Nenhuma informação auxiliar para esta questão.</div>
-                </div>
+                <div class="alternativas-container" id="questao-alternativas"></div>
+                <div id="feedback-questao" style="display: none;"></div>
             </div>
-            <div class="alternativas-container" id="questao-alternativas"></div>
-            <div id="feedback-questao" style="display: none;"></div>
             <div class="simulado-navigation-profissional">
                 <div class="nav-group-left">
                     <button id="btn-anterior" class="btn btn-anterior" onclick="mudarQuestao(-1)" disabled>
@@ -277,6 +324,10 @@ function mostrarTelaSimuladoAtivo(totalQuestoes) {
                 </div>
             </div>
         </div>`;
+        // (FIM DA ALTERAÇÃO)
+        
+        // (NOVO) Aplica preferências salvas (modo foco) assim que o HTML é criado
+        aplicarPreferenciasSalvas();
     }
 }
 
@@ -398,6 +449,17 @@ function exibirQuestao(questao, indice, total, respostaAnterior) {
     const btnProximo = document.getElementById("btn-proximo");
     if (btnProximo) {
         btnProximo.style.display = indice < total - 1 ? "inline-block" : "none";
+    }
+
+    // (NOVO) Garante que o zoom seja aplicado ao carregar a questão
+    const savedSize = SessionManager.get('fontSize');
+    const content = document.getElementById('simulado-content-zoomavel');
+    if (savedSize && content) {
+        // Define o font-size com base no valor salvo
+        content.style.fontSize = parseFloat(savedSize) + "em";
+    } else if (content) {
+        // Garante que o padrão seja 1em se nada estiver salvo
+        content.style.fontSize = "1.0em"; 
     }
 }
 
@@ -535,6 +597,9 @@ function finalizarSimulado() {
         return;
     }
 
+    // (NOVO) Para o cronômetro
+    pararCronometro();
+
     const simuladoContainer = document.getElementById("simulado-ativo");
     if (simuladoContainer) {
         simuladoContainer.innerHTML = '<div class="text-center"><div class="loading"></div><p>Finalizando simulado e gerando resultados...</p></div>';
@@ -554,14 +619,20 @@ function finalizarSimulado() {
     })
     .then(data => {
         if (data.success) {
+            // (NOVO) Limpa o cronômetro da sessão
+            SessionManager.remove('simuladoStartTime');
             exibirResultado(data.relatorio);
         } else {
             alert("Erro: " + data.error);
+            // (NOVO) Reinicia o cronômetro se a finalização falhar
+            iniciarCronometro(); 
         }
     })
     .catch(error => {
         console.error("Erro na finalização:", error);
         alert("Erro ao finalizar simulado: " + error.message);
+        // (NOVO) Reinicia o cronômetro se a finalização falhar
+        iniciarCronometro();
     });
 }
 
@@ -877,9 +948,149 @@ document.addEventListener("DOMContentLoaded", function() {
     SessionManager.remove("simulado_respostas");
     SessionManager.remove("indice_atual");
     
+    // (NOVO) Aplica Focus Mode e Font Size salvos
+    aplicarPreferenciasSalvas();
+    
+    // (NOVO) Adiciona listeners para os novos botões
+    adicionarListenersSimulado();
+    
     carregarConteudoInicial();
     navegarPara("tela-inicio"); // Inicia na tela de início
 });
+
+
+// ============================================================================
+// (NOVAS FUNÇÕES - CRONÔMETRO, FONTE, MODO FOCO)
+// ============================================================================
+
+function iniciarCronometro() {
+    pararCronometro(); // Garante que não haja timers duplicados
+    
+    let startTime = SessionManager.get('simuladoStartTime');
+    if (!startTime) {
+        startTime = new Date().getTime();
+        SessionManager.set('simuladoStartTime', startTime);
+    }
+    
+    simuladoTimerInterval = setInterval(atualizarCronometro, 1000);
+    atualizarCronometro(); // Chama imediatamente para não esperar 1s
+}
+
+function pararCronometro() {
+    if (simuladoTimerInterval) {
+        clearInterval(simuladoTimerInterval);
+        simuladoTimerInterval = null;
+    }
+    // Nota: Não remove o 'simuladoStartTime' da sessão aqui,
+    // apenas 'finalizarSimulado()' deve fazer isso.
+}
+
+function atualizarCronometro() {
+    const startTime = SessionManager.get('simuladoStartTime');
+    if (!startTime) return;
+    
+    const display = document.getElementById('cronometro-display');
+    if (!display) {
+        pararCronometro(); // Para o timer se o display sumir
+        return;
+    }
+
+    const now = new Date().getTime();
+    const elapsed = Math.floor((now - startTime) / 1000); // em segundos
+
+    const hours = Math.floor(elapsed / 3600);
+    const minutes = Math.floor((elapsed % 3600) / 60);
+    const seconds = elapsed % 60;
+
+    display.textContent = 
+        (hours < 10 ? '0' : '') + hours + ':' +
+        (minutes < 10 ? '0' : '') + minutes + ':' +
+        (seconds < 10 ? '0' : '') + seconds;
+}
+
+function aplicarPreferenciasSalvas() {
+    // Aplica Focus Mode se salvo
+    const isFocused = SessionManager.get('focusMode') === true;
+    if (isFocused) {
+        document.body.classList.add('focus-mode');
+    }
+    
+    // Atualiza ícones (mesmo que o HTML não esteja pronto, 
+    // será corrigido quando mostrarTelaSimuladoAtivo for chamado)
+    const iconExpand = document.getElementById('focus-icon-expand');
+    const iconCompress = document.getElementById('focus-icon-compress');
+    if(iconExpand && iconCompress){
+        iconExpand.classList.toggle('hidden', isFocused);
+        iconCompress.classList.toggle('hidden', !isFocused);
+    }
+
+    // Aplica Font Size
+    // Nota: O elemento '#simulado-content-zoomavel' pode não existir ainda.
+    // A função 'exibirQuestao' também chama essa lógica para garantir.
+    const savedSize = SessionManager.get('fontSize');
+    const content = document.getElementById('simulado-content-zoomavel');
+    if (savedSize && content) {
+        content.style.fontSize = parseFloat(savedSize) + "em";
+    }
+}
+
+function adicionarListenersSimulado() {
+    // Usamos delegação de eventos no 'body' para que os botões 
+    // funcionem mesmo sendo criados dinamicamente.
+    document.body.addEventListener('click', function(e) {
+        
+        const targetId = e.target.id || (e.target.closest('button') ? e.target.closest('button').id : null);
+        
+        // --- Controle de Fonte ---
+        const content = document.getElementById('simulado-content-zoomavel');
+        
+        if (targetId === 'btn-font-increase' || targetId === 'btn-font-decrease') {
+            if (!content) return; // Só age se o simulado estiver na tela
+
+            let currentSize = 1.0;
+            const savedSize = SessionManager.get('fontSize');
+            if (savedSize) {
+                currentSize = parseFloat(savedSize);
+            } else {
+                // Tenta ler do estilo, convertendo px para em (base 16px)
+                const computedSize = parseFloat(window.getComputedStyle(content).fontSize) / 16;
+                if (!isNaN(computedSize) && computedSize > 0) {
+                    currentSize = computedSize;
+                }
+            }
+
+            if (targetId === 'btn-font-increase') {
+                if (currentSize < 1.6) { // Limite de 160%
+                    currentSize = (currentSize * 10 + 1) / 10; // Evita bugs de ponto flutuante
+                    content.style.fontSize = currentSize + "em";
+                    SessionManager.set('fontSize', currentSize);
+                }
+            }
+
+            if (targetId === 'btn-font-decrease') {
+                if (currentSize > 0.8) { // Limite de 80%
+                    currentSize = (currentSize * 10 - 1) / 10;
+                    content.style.fontSize = currentSize + "em";
+                    SessionManager.set('fontSize', currentSize);
+                }
+            }
+        }
+        
+        // --- Modo Foco ---
+        if (targetId === 'btn-focus-mode') {
+            const isFocused = document.body.classList.toggle('focus-mode');
+            SessionManager.set('focusMode', isFocused);
+            
+            // Troca os ícones
+            const iconExpand = document.getElementById('focus-icon-expand');
+            const iconCompress = document.getElementById('focus-icon-compress');
+            if(iconExpand && iconCompress){
+                iconExpand.classList.toggle('hidden', isFocused);
+                iconCompress.classList.toggle('hidden', !isFocused);
+            }
+        }
+    });
+}
 
 
 // ============================================================================
@@ -1149,6 +1360,10 @@ function iniciarRevisaoEspacada() {
             };
             mostrarTelaSimuladoAtivo(data.total_questoes);
             exibirQuestao(data.questao_atual, data.indice_atual, data.total_questoes, null);
+            
+            // (NOVO) Inicia o cronômetro para o simulado de revisão
+            iniciarCronometro();
+
         } else {
             alert('❌ ' + data.error);
             // Volta para o dashboard se falhar

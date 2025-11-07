@@ -1124,9 +1124,11 @@ def corrigir_redacao_gemini_real():
         if GEMINI_API_KEY and GEMINI_API_KEY != 'sua_chave_gemini_aqui':
             genai.configure(api_key=GEMINI_API_KEY)
             
+            # --- (INÍCIO DA ATUALIZAÇÃO) ---
+            # Prompt atualizado para ser mais rigoroso e fiel ao ENEM
             prompt = f'''
-            Aja como um corretor de redação do ENEM. Seja rigoroso e técnico.
-            Corrija esta redação com base nos critérios do ENEM.
+            Aja como um avaliador-chefe de banca de correção do ENEM. Seja extremamente rigoroso, técnico e detalhista.
+            Sua tarefa é corrigir a redação do aluno com base nos critérios oficiais do ENEM. A nota deve ser justa, mas severa, penalizando desvios gramaticais, falta de coesão, argumentação fraca e propostas de intervenção incompletas.
 
             TEMA: {tema}
             ENUNCIADO (Contexto): {enunciado}
@@ -1136,28 +1138,52 @@ def corrigir_redacao_gemini_real():
             {texto}
             ---
 
-            AVALIE CADA UMA DAS 5 COMPETÊNCIAS DO ENEM, atribuindo uma nota de 0 a 200 para cada uma.
-            1. Domínio da norma padrão (Gramática, ortografia, pontuação).
-            2. Compreensão do tema e estrutura dissertativo-argumentativa (Não fugir do tema, tese clara, introdução, desenvolvimento, conclusão).
-            3. Argumentação e repertório (Defesa do ponto de vista com argumentos sólidos, fatos, citações, dados).
-            4. Coesão textual (Uso correto de conectivos, parágrafos bem estruturados).
-            5. Proposta de intervenção (Proposta detalhada com Agente, Ação, Modo/Meio, Efeito e Detalhamento).
+            AVALIE CADA UMA DAS 5 COMPETÊNCIAS DO ENEM, atribuindo uma nota de 0 a 200 para cada uma, seguindo estas diretrizes:
+
+            1.  **Competência 1 (0-200): Domínio da norma padrão.**
+                * Analise desvios gramaticais (concordância, regência, ortografia) e de convenção da escrita (pontuação, acentuação).
+                * Seja rigoroso com o número de desvios para atribuir a nota. (Ex: 0-2 desvios = 200; 3-5 = 160; 6-8 = 120; etc.)
+
+            2.  **Competência 2 (0-200): Compreensão do tema e estrutura dissertativo-argumentativa.**
+                * Verifique se o aluno compreendeu 100% do tema ou se tangenciou.
+                * Avalie a presença clara de Tese (na introdução), Desenvolvimento (argumentos) e Conclusão.
+                * Verifique o uso de repertório sociocultural legitimado, pertinente e produtivo. Se não houver, a nota deve ser baixa.
+
+            3.  **Competência 3 (0-200): Argumentação e repertório.**
+                * Avalie a qualidade da argumentação. O aluno defende um ponto de vista?
+                * O repertório é pertinente ao tema? É produtivo (usado para defender o argumento) ou apenas expositivo?
+                * Penalize argumentos baseados apenas no senso comum ou cópia dos textos motivadores.
+
+            4.  **Competência 4 (0-200): Coesão textual.**
+                * Analise o uso de conectivos (conjunções, preposições) tanto entre os parágrafos (interparagrafais, ex: "Ademais", "Portanto") quanto dentro deles (intraparagrafais).
+                * A ausência ou repetição excessiva de conectivos deve ser penalizada.
+
+            5.  **Competência 5 (0-200): Proposta de intervenção.**
+                * A proposta deve ser completa e detalhada, respeitando os direitos humanos.
+                * Verifique a presença OBRIGATÓRIA dos 5 elementos:
+                    1.  **Agente** (Quem vai fazer?)
+                    2.  **Ação** (O que vai fazer?)
+                    3.  **Modo/Meio** (Como vai fazer?)
+                    4.  **Efeito/Finalidade** (Para que vai fazer?)
+                    5.  **Detalhamento** (Um detalhamento de qualquer um dos 4 elementos anteriores).
+                * A falta de UM elemento reduz a nota para 160. A falta de DOIS reduz para 120.
 
             RETORNE ESTRITAMENTE UM OBJETO JSON, sem nenhum texto antes ou depois. O JSON deve ter o seguinte formato:
             {{
                 "nota_final": 0-1000 (soma das 5 competências),
                 "competencias": [
-                    {{"nome": "Competência 1: Domínio da norma padrão", "nota": 0-200, "comentario": "Seu comentário técnico sobre esta competência."}},
-                    {{"nome": "Competência 2: Compreensão do tema", "nota": 0-200, "comentario": "Seu comentário técnico sobre esta competência."}},
-                    {{"nome": "Competência 3: Argumentação e repertório", "nota": 0-200, "comentario": "Seu comentário técnico sobre esta competência."}},
-                    {{"nome": "Competência 4: Coesão textual", "nota": 0-200, "comentario": "Seu comentário técnico sobre esta competência."}},
-                    {{"nome": "Competência 5: Proposta de intervenção", "nota": 0-200, "comentario": "Seu comentário técnico sobre esta competência."}}
+                    {{"nome": "Competência 1: Domínio da norma padrão", "nota": 0-200, "comentario": "Seu comentário técnico e rigoroso sobre esta competência."}},
+                    {{"nome": "Competência 2: Compreensão do tema e Estrutura", "nota": 0-200, "comentario": "Seu comentário técnico e rigoroso sobre esta competência (incluindo repertório)."}},
+                    {{"nome": "Competência 3: Argumentação", "nota": 0-200, "comentario": "Seu comentário técnico e rigoroso sobre esta competência."}},
+                    {{"nome": "Competência 4: Coesão textual", "nota": 0-200, "comentario": "Seu comentário técnico e rigoroso sobre esta competência."}},
+                    {{"nome": "Competência 5: Proposta de intervenção", "nota": 0-200, "comentario": "Seu comentário técnico e rigoroso sobre esta competência (verificando os 5 elementos)."}}
                 ],
-                "pontos_fortes": ["Liste 3 pontos fortes principais em formato de string"],
-                "pontos_fracos": ["Liste 3 pontos fracos principais em formato de string"],
-                "sugestoes_melhoria": ["Liste 3 sugestões de melhoria práticas em formato de string"]
+                "pontos_fortes": ["Liste 3 pontos fortes principais de forma técnica"],
+                "pontos_fracos": ["Liste 3 pontos fracos principais que precisam de correção imediata"],
+                "sugestoes_melhoria": ["Liste 3 sugestões práticas para o aluno melhorar a nota"]
             }}
             '''
+            # --- (FIM DA ATUALIZAÇÃO) ---
             
             # --- (CORREÇÃO 1) Modelo do Gemini ---
             # O modelo 'gemini-1.5-pro-latest' falhou no log. Mudando para o '1.0-pro'.
@@ -1208,5 +1234,3 @@ if __name__ == '__main__':
     # (NOVO) O app.run() agora só é usado para testes locais
     # O Gunicorn (servidor de produção) será usado pelo Render
     app.run(debug=True)
-}
-MEU ARQUIVO ATUAL É ESSE ENTAO ATUALIZE-O
