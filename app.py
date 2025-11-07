@@ -35,18 +35,46 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
 # ---
-# --- FONTE DE DADOS PRINCIPAL (PANDAS - Inalterado) ---
+# --- (CORRIGIDO) FONTE DE DADOS PRINCIPAL (PANDAS - Leitura Robusta) ---
 # ---
+df_questoes = None
 try:
-    df_questoes = pd.read_csv('questoes.csv', sep=';', quotechar='"')
-    df_questoes = df_questoes.fillna('')
-    # Usar o índice do DataFrame como 'id' universal da questão
-    df_questoes.index.name = 'id'
-    print(f"INFO: 'questoes.csv' carregado com sucesso. Total: {len(df_questoes)} questões.")
+    # (NOVA TENTATIVA) Usando 'engine' python, que é mais flexível com aspas e quebras de linha
+    df_questoes = pd.read_csv(
+        'questoes.csv', 
+        sep=';', 
+        encoding='utf-8', 
+        engine='python' # <--- ESTA É A CORREÇÃO PRINCIPAL
+    )
+    print(f"INFO: 'questoes.csv' carregado com 'utf-8' (engine python). Total: {len(df_questoes)} questões.")
+    
 except Exception as e:
-    print(f"ERRO CRÍTICO: Não foi possível ler 'questoes.csv'. Erro: {e}")
-    df_questoes = pd.DataFrame()
-# --- FIM DA FONTE DE DADOS ---
+    print(f"ERRO 1: Falha ao ler com 'utf-8' (engine python). Erro: {e}")
+    print("TENTANDO FALLBACK com 'latin-1' (engine python)...")
+    try:
+        # (FALLBACK) Tentar com 'latin-1'
+        df_questoes = pd.read_csv(
+            'questoes.csv', 
+            sep=';', 
+            encoding='latin-1', # <--- Codificação alternativa
+            engine='python' # <--- Usando engine flexível
+        )
+        print(f"INFO: 'questoes.csv' carregado com 'latin-1' (engine python). Total: {len(df_questoes)} questões.")
+    except Exception as e2:
+        print(f"ERRO CRÍTICO: Falha ao ler 'questoes.csv' com ambos os métodos. Erro: {e2}")
+        df_questoes = pd.DataFrame() # Inicia vazio para não quebrar o resto
+
+# (Adicionado) Verificação de segurança
+if df_questoes is None:
+     df_questoes = pd.DataFrame() # Garante que não é None
+
+# Prepara o DataFrame final
+df_questoes = df_questoes.fillna('')
+df_questoes.index.name = 'id' # Usar o índice do DataFrame como 'id' universal
+if df_questoes.empty:
+     print("AVISO: O DataFrame de questões está VAZIO. O app vai rodar, mas sem questões.")
+# --- FIM DA CORREÇÃO ---
+
 
 # ---
 # --- (ATUALIZADO) MAPA DE ÁREAS ---
@@ -219,6 +247,9 @@ def iniciar_simulado():
 
         if not areas_selecionadas:
             return jsonify({"success": False, "error": "Nenhuma área selecionada."}), 400
+        
+        if df_questoes.empty:
+            return jsonify({"success": False, "error": "Nenhuma questão disponível no banco de dados."}), 500
 
         questoes_filtradas = df_questoes[df_questoes['disciplina'].isin(areas_selecionadas)]
         
@@ -297,6 +328,9 @@ def get_questao(indice):
         session['indice_atual'] = indice
         questao_id = questoes_ids[indice]
         try:
+            if df_questoes.empty:
+                return jsonify({"success": False, "error": "Banco de questões não carregado no servidor."}), 500
+                
             row = df_questoes.loc[questao_id]
             
             alternativas_obj = {
@@ -329,6 +363,8 @@ def get_questao(indice):
                 "questao": questao_atual,
                 "resposta_anterior": resposta_anterior
             })
+        except KeyError:
+            return jsonify({"success": False, "error": f"Erro: Questão ID {questao_id} não encontrada no CSV."}), 500
         except Exception as e:
              return jsonify({"success": False, "error": f"Erro ao buscar questão: {e}"}), 500
     else:
@@ -349,6 +385,9 @@ def responder_questao():
         return jsonify({"success": False, "error": "Esta questão já foi respondida."}), 400
 
     try:
+        if df_questoes.empty:
+            return jsonify({"success": False, "error": "Banco de questões não carregado no servidor."}), 500
+            
         row = df_questoes.loc[int(questao_id)]
              
         resposta_certa = row.get('resposta_correta', '').lower()
@@ -382,6 +421,8 @@ def responder_questao():
             "resposta_correta": resposta_certa.upper(),
             "justificativa": row.get('justificativa', 'Sem justificativa detalhada.')
         })
+    except KeyError:
+        return jsonify({"success": False, "error": f"Erro: Questão ID {questao_id} não encontrada no CSV."}), 500
     except Exception as e:
         return jsonify({"success": False, "error": f"Erro ao verificar resposta: {e}"}), 500
 
@@ -582,6 +623,9 @@ def iniciar_revisao_espacada():
             return jsonify({"success": False, "error": "Nenhuma questão para revisão encontrada. Você acertou tudo!"}), 404
         
         # O resto da lógica usa Pandas, inalterado
+        if df_questoes.empty:
+            return jsonify({"success": False, "error": "Banco de questões não carregado no servidor."}), 500
+            
         questoes_revisao = df_questoes.loc[df_questoes.index.isin(questao_ids)]
         
         if questoes_revisao.empty:
